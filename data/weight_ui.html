@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Стенд тяги</title>
+
+  <!-- Chart.js — библиотека графика -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Tailwind CSS — стилизация интерфейса -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Lucide — иконки -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-gray-900 text-white font-sans p-4">
+    <div class="flex gap-4">
+        <!-- Сайдбар -->
+        <div class="flex flex-col gap-2 pt-1">
+          <a href="/" class="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold">
+            <i data-lucide="activity"></i><span>Замеры</span>
+          </a>
+          <a href="/results" class="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white font-semibold">
+            <i data-lucide="file-text"></i><span>Результаты</span>
+          </a>
+        </div>
+      
+        <!-- Основной контент -->
+        <div class="flex-1 space-y-4">
+    
+    <!-- Заголовок и индикатор активности -->
+    <h1 class="text-2xl font-bold flex items-center gap-2">
+      Измерение тяги
+      <div id="statusIndicator" class="w-3 h-3 bg-green-500 rounded-full animate-pulse hidden"></div>
+    </h1>
+
+    <!-- Секция: Оборудование и программа -->
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-gray-800 rounded-xl p-4 shadow-md">
+    <div class="space-y-2">
+      <h2 class="text-lg font-semibold">Оборудование</h2>
+      <input id="motorInput" class="w-full bg-gray-700 text-white p-2 rounded" placeholder="Мотор" value="Неизвестный мотор">
+      <input id="propInput" class="w-full bg-gray-700 text-white p-2 rounded" placeholder="Пропеллер" value="Неизвестный пропеллер">
+      <input id="batteryInput" class="w-full bg-gray-700 text-white p-2 rounded" placeholder="Батарея" value="Неизвестная батарея">
+    </div>
+  
+  </div>
+
+    <!-- Область графика и сообщений -->
+    <div class="bg-gray-800 rounded-xl p-4 shadow-lg">
+      <canvas id="chart" class="w-full h-60"></canvas>
+      <p id="pauseLabel" class="text-center text-yellow-400 mt-2 hidden">⏸ Пауза - измерения остановлены</p>
+      <p id="autoPauseLabel" class="text-center text-yellow-400 mt-2 hidden">⏸ Пауза — нет нагрузки</p>
+      <p id="hxError" class="text-center text-red-500 mt-2 hidden">❌ Ошибка: весы (HX711) не подключены</p>
+      <p id="serverError" class="text-center text-red-500 mt-2 hidden">❌ Ошибка: Тягометр не отвечает</p>
+    </div>
+
+    <!-- Регулятор PWM -->
+  <div class="bg-gray-800 rounded-xl p-4 shadow-md mt-4">
+    <h2 class="text-lg font-semibold mb-2">PWM сигнал</h2>
+    <label for="thrustSlider" class="block text-sm text-gray-300 mb-1">Текущее значение: <span id="thrustValue">1000</span> мкс</label>
+    <input id="thrustSlider" type="range" min="1000" max="2000" value="1000" step="1" class="w-full">
+  </div>
+
+    <!-- Кнопки управления -->
+    <div class="flex flex-wrap gap-2 justify-center mt-4 text-sm sm:text-base">
+      <button id="startPauseBtn" onclick="toggleMeasurement()" class="flex items-center gap-2 bg-green-600 hover:bg-green-700 px-3 py-2 rounded-lg font-semibold">
+        <i data-lucide="play"></i><span>Старт</span>
+      </button>
+      <button id="stopBtn" onclick="stopTest()" disabled class="opacity-50 pointer-events-none flex items-center gap-2 bg-red-600 hover:bg-red-700 px-3 py-2 rounded-lg font-semibold">
+        <i data-lucide="stop-circle"></i>Стоп
+      </button>
+      <button id="resetBtn" onclick="resetTest()" disabled class="opacity-50 pointer-events-none flex items-center gap-2 bg-gray-600 hover:bg-gray-700 px-3 py-2 rounded-lg font-semibold">
+        <i data-lucide="rotate-ccw"></i>Сброс
+  </button>
+    </div>
+
+    <!-- Кнопки результатов -->
+    <div id="resultsButtons" class="flex flex-wrap gap-2 justify-center mt-4 text-sm sm:text-base hidden">
+      <button onclick="exportResults()" class="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 px-3 py-2 rounded-lg font-semibold">
+        <i data-lucide="file-text"></i>CSV
+      </button>
+      <button onclick="downloadChart()" class="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded-lg font-semibold">
+        <i data-lucide="image"></i>График
+      </button>
+    </div>
+
+    <!-- Текущий и максимальный вес -->
+    <div class="grid grid-cols-2 gap-4 mt-6">
+        <div class="bg-gray-800 rounded-xl p-4 shadow-md col-span-2">
+            <p class="text-lg">Время:</p>
+            <p class="font-mono text-2xl text-blue-400" id="elapsedTime">0.0 сек.</p>
+          </div>
+      <div class="bg-gray-800 rounded-xl p-4 shadow-md">
+        <p class="text-lg">Текущая тяга:</p>
+        <p class="font-mono text-2xl text-blue-400" id="weight">0.00</p>
+      </div>
+      <div class="bg-gray-800 rounded-xl p-4 shadow-md">
+        <p class="text-lg">Максимум:</p>
+        <p class="font-mono text-2xl text-yellow-400" id="maxWeight">0.00</p>
+      </div>
+    </div> <!-- конец основного контента -->
+</div> <!-- конец flex -->
+
+<script>
+  // Инициализация иконок
+  lucide.createIcons();
+
+  // Настройка графика
+  const ctx = document.getElementById('chart').getContext('2d');
+  const data = {
+    labels: [],  // временные метки
+    datasets: [{
+      label: 'Тяга (г)',
+      data: [], // значения тяги
+      borderColor: 'rgb(59, 130, 246)',
+      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+      tension: 0.3 // сглаживание линии
+    },
+    {
+      label: 'PWM',
+      data: [],
+      borderColor: 'rgb(34, 197, 94)', // зелёный
+      backgroundColor: 'rgba(34, 197, 94, 0.1)',
+      tension: 0.3,
+      yAxisID: 'y2'
+    }
+    ]
+  };
+
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: data,
+    options: {
+  animation: false,
+  scales: {
+    y: {
+      beginAtZero: true,
+      ticks: { color: "#fff" },
+      grid: { color: "#444" },
+      title: { display: true, text: 'Тяга (г)', color: "#fff" }
+    },
+    y2: {
+      position: 'right',
+      min: 1000,
+      max: 2000,
+      ticks: { color: "#22c55e" },
+      grid: { drawOnChartArea: false },
+      title: { display: true, text: 'PWM', color: "#22c55e" }
+    },
+    x: {
+      type: 'linear',
+      min: 0,
+      max: 15,
+      ticks: { color: "#aaa" },
+      grid: { color: "#333" }
+    }
+  },
+  plugins: {
+    legend: { labels: { color: "#fff" } }
+  }
+}
+  });
+
+// Обработчик для ползунка тяги (PWM)
+document.getElementById("thrustSlider").addEventListener("input", (e) => {
+  const pwm = parseInt(e.target.value); // Значение от 1000 до 2000
+  currentPWM = pwm; // Обновляем глобальную переменную
+  document.getElementById("thrustValue").textContent = `${pwm} мкс`;
+
+  // Отправляем на ESP32
+  fetch(`/thrust?value=${pwm}`).catch(err => {
+    console.warn("Ошибка отправки PWM:", err);
+  });
+});
+
+  // Переменные состояния
+  let isRunning = false;
+  let isPaused = false;
+  let autoPaused = false;
+  let startTime = 0;
+  let maxWeight = 0;
+  let lastWeight = 0;
+  let unchangedSeconds = 0;
+
+  let measurementStartTime = null;
+  let accumulatedTime = 0; // в секундах
+  let lastResumeTime = null;
+  let currentPWM = 1000;
+
+  let currentCsvPath = ""; //для файлов
+
+  // Функция запуска/паузы измерений
+  function toggleMeasurement() {
+
+   const btn = document.getElementById("startPauseBtn");
+   const icon = btn.querySelector("i");
+   const text = btn.querySelector("span");
+
+  if (!isRunning) {
+    // Первый запуск
+    document.getElementById("stopBtn").disabled = false;
+    document.getElementById("stopBtn").classList.remove("opacity-50", "pointer-events-none");
+    document.getElementById("elapsedTime").textContent = "0.0 сек.";
+    isRunning = true;
+    isPaused = false;
+    autoPaused = false;
+    measurementStartTime = Date.now(); // в миллисекундах
+    maxWeight = 0;
+    lastWeight = 0;
+    unchangedSeconds = 0;
+    accumulatedTime = 0;
+    lastResumeTime = Date.now();
+
+    // Очистка графика
+    chart.data.labels = [];
+    chart.data.datasets[0].data = [];
+    chart.options.scales.x.min = 0;
+    chart.options.scales.x.max = 15;
+    chart.update();
+
+    // Сброс значений
+    document.getElementById("weight").textContent = "0.00";
+    document.getElementById("maxWeight").textContent = "0.00";
+    document.getElementById("pauseLabel").classList.add("hidden");
+    document.getElementById("autoPauseLabel").classList.add("hidden");
+    document.getElementById("resultsButtons").classList.add("hidden");
+    document.getElementById("elapsedTime").textContent = "0.0 сек.";
+
+    fetch("/tare");
+
+    // Меняем иконку и текст
+    replaceIcon(btn, "pause", "Пауза");
+
+  } else if (isPaused || autoPaused) {
+    // Возобновление
+    isPaused = false;
+    autoPaused = false;
+    lastResumeTime = Date.now();
+    document.getElementById("pauseLabel").classList.add("hidden");
+    document.getElementById("autoPauseLabel").classList.add("hidden");
+
+    replaceIcon(btn, "pause", "Пауза");
+
+  } else {
+    // Вручную пауза
+    isPaused = true;
+    document.getElementById("pauseLabel").classList.remove("hidden");
+    document.getElementById("autoPauseLabel").classList.add("hidden"); // 🔧 Скрыть авто-паузу при ручной
+    replaceIcon(btn, "play", "Продолжить");
+    accumulatedTime += (Date.now() - lastResumeTime) / 1000;
+    lastResumeTime = null;
+  }
+}
+
+// 👇 Утилита для замены иконки
+function replaceIcon(button, iconName, text) {
+  button.innerHTML = `<i data-lucide="${iconName}"></i><span>${text}</span>`;
+  lucide.createIcons();
+}
+
+  // Завершение теста и отображение кнопок экспорта
+  function stopTest() {
+  isRunning = false;
+  isPaused = false;
+  autoPaused = false;
+  measurementStartTime = null;
+  accumulatedTime = 0;
+  lastResumeTime = null; 
+
+  // Сброс ползунка PWM
+document.getElementById("thrustSlider").value = 1000;
+document.getElementById("thrustValue").textContent = "1000 мкс";
+currentPWM = 1000;
+fetch(`/thrust?value=1000`);
+
+
+  // Сброс состояния
+  document.getElementById("pauseLabel").classList.add("hidden");
+  document.getElementById("autoPauseLabel").classList.add("hidden");
+  document.getElementById("resultsButtons").classList.remove("hidden");
+  document.getElementById("statusIndicator").classList.add("hidden");
+  document.getElementById("elapsedTime").textContent = "0.0 сек.";
+  
+
+  // Обнуление значений
+  document.getElementById("weight").textContent = "0.00";
+  document.getElementById("maxWeight").textContent = "0.00";
+
+  // Кнопка "Старт"
+  const btn = document.getElementById("startPauseBtn");
+  replaceIcon(btn, "play", "Старт");
+
+  // Отключаем "Стоп"
+  const stopBtn = document.getElementById("stopBtn");
+  stopBtn.disabled = true;
+  stopBtn.classList.add("opacity-50", "pointer-events-none");
+
+// После stopBtn отключения
+document.getElementById("startPauseBtn").disabled = true; // запрет на старт до сброса
+const startBtn = document.getElementById("startPauseBtn");
+startBtn.classList.add("opacity-50", "pointer-events-none");
+startBtn.disabled = true;
+
+  // Активировать кнопку сброса
+const resetBtn = document.getElementById("resetBtn");
+resetBtn.disabled = false;
+resetBtn.classList.remove("opacity-50", "pointer-events-none");
+}
+
+  // Периодический запрос веса каждые 500 мс
+  setInterval(() => {
+  fetch("/weight")
+    .then(res => res.json())
+    .then(data => {
+      let time = accumulatedTime;
+
+      // Обновляем только если есть активное измерение (не пауза, не авто-пауза)
+      if (isRunning && lastResumeTime !== null) {
+        time += (Date.now() - lastResumeTime) / 1000;
+      }
+
+      // Отображаем корректное время (и не обновляем в авто-паузе!)
+      document.getElementById("elapsedTime").textContent = `${time.toFixed(1)} сек.`;
+
+      const weight = parseFloat(data.weight);
+
+      // Обновляем вес
+      document.getElementById("weight").textContent = weight.toFixed(2);
+      document.getElementById("statusIndicator").classList.remove("hidden");
+      document.getElementById("hxError").classList.add("hidden");
+
+      // Прерываем обновление графика на паузе
+      if (!isRunning || isPaused || autoPaused) {
+        document.getElementById("statusIndicator").classList.add("hidden");
+        return;
+      }
+
+      // Максимум
+      if (weight > maxWeight) {
+        maxWeight = weight;
+        document.getElementById("maxWeight").textContent = maxWeight.toFixed(2);
+      }
+
+      // Отслеживаем отсутствие изменений
+      if (Math.abs(weight - lastWeight) < 0.01 || weight < 0.07) {
+        unchangedSeconds += 0.5;
+      } else {
+        unchangedSeconds = 0;
+      }
+
+      lastWeight = weight;
+
+// Условия для автоматической паузы
+if (unchangedSeconds > 3 && currentPWM < 1000 && weight < 100) {
+  if (!autoPaused) {
+    autoPaused = true;
+    isPaused = false;
+
+    if (lastResumeTime !== null) {
+      accumulatedTime += (Date.now() - lastResumeTime) / 1000;
+    }
+    lastResumeTime = null;
+
+    document.getElementById("autoPauseLabel").classList.remove("hidden");
+    document.getElementById("startPauseBtn").querySelector("span").textContent = "Продолжить";
+    document.getElementById("startPauseBtn").querySelector("i").setAttribute("data-lucide", "play");
+    lucide.createIcons();
+  }
+  return;
+}
+
+// 🔁 Автоматическое снятие авто-паузы
+if (autoPaused && (weight > 100 || currentPWM >= 1000)) {
+  autoPaused = false;
+  isPaused = false;
+  lastResumeTime = Date.now();
+  document.getElementById("autoPauseLabel").classList.add("hidden");
+  replaceIcon(document.getElementById("startPauseBtn"), "pause", "Пауза");
+}
+
+      // Обновляем график
+      chart.data.labels.push(parseFloat(time));
+      chart.data.datasets[0].data.push(weight);
+      chart.data.datasets[1].data.push(currentPWM);
+
+      if (chart.data.labels.length > 0 && chart.data.labels[chart.data.labels.length - 1] > 15) {
+        chart.options.scales.x.min = chart.data.labels[chart.data.labels.length - 1] - 15;
+        chart.options.scales.x.max = chart.data.labels[chart.data.labels.length - 1];
+      }
+
+      chart.update();
+    })
+    .catch(() => {
+      document.getElementById("hxError").classList.remove("hidden");
+    });
+}, 500);
+
+  // Экспорт результатов в CSV
+  function exportResults() {
+    let csv = "time,weight\n";
+    for (let i = 0; i < chart.data.labels.length; i++) {
+      csv += `${chart.data.labels[i]},${chart.data.datasets[0].data[i]}\n`;
+    }
+    const blob = new Blob([csv], { type: "text/csv" });
+    const link = document.createElement("a");
+    const now = new Date();
+    const filename = `${now.toISOString().slice(0,10)}-${chart.data.labels.length}s-${maxWeight.toFixed(0)}g.csv`;
+    link.download = filename;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+  }
+
+  // Сохранение графика как PNG
+  function downloadChart() {
+    const link = document.createElement("a");
+    link.download = "chart.png";
+    link.href = chart.toBase64Image();
+    link.click();
+  }
+
+  function resetTest() {
+
+    currentCsvPath = ""; //сброс файла
+
+  // Сброс состояния графика
+  chart.data.labels = [];
+  chart.data.datasets[0].data = [];
+  chart.data.datasets[1].data = [];
+  chart.options.scales.x.min = 0;
+  chart.options.scales.x.max = 15;
+  chart.update();
+
+  // Сброс всех полей
+  document.getElementById("weight").textContent = "0.00";
+  document.getElementById("maxWeight").textContent = "0.00";
+  document.getElementById("elapsedTime").textContent = "0.0 сек.";
+  document.getElementById("pauseLabel").classList.add("hidden");
+  document.getElementById("autoPauseLabel").classList.add("hidden");
+  document.getElementById("statusIndicator").classList.add("hidden");
+  document.getElementById("resultsButtons").classList.add("hidden");
+
+  // Сброс ползунка и значения PWM
+  document.getElementById("thrustSlider").value = 1000;
+  document.getElementById("thrustValue").textContent = "1000 мкс";
+  currentPWM = 1000;
+  fetch(`/thrust?value=1000`);
+
+  // Включить старт, отключить сброс
+  const startBtn = document.getElementById("startPauseBtn");
+  replaceIcon(startBtn, "play", "Старт");
+  startBtn.classList.remove("opacity-50", "pointer-events-none");
+  startBtn.disabled = false;
+
+  const resetBtn = document.getElementById("resetBtn");
+  resetBtn.disabled = true;
+  resetBtn.classList.add("opacity-50", "pointer-events-none");
+}
+
+  
+</script>
+</body>
+</html>
