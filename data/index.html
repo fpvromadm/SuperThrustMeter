@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Thrust Stand V4</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
+
+        :root {
+            --bg-color: #1a1a2e;
+            --card-color: #16213e;
+            --primary-color: #0f3460;
+            --accent-color: #e94560;
+            --pwm-color: #1E90FF;
+            --text-color: #e0e0e0;
+            --font-family: 'Roboto', sans-serif;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 1rem;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .card {
+            background-color: var(--card-color);
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--primary-color);
+        }
+
+        .card-title {
+            margin-top: 0;
+            margin-bottom: 1rem;
+            color: var(--accent-color);
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 0.5rem;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 50vh;
+            grid-column: 1 / -1;
+        }
+
+        .live-timer {
+            position: absolute;
+            bottom: 45px; /* Adjust to be above x-axis labels */
+            right: 20px;
+            background-color: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 5px 15px;
+            border-radius: 8px;
+            font-size: 1.4rem;
+            font-family: monospace;
+            z-index: 10;
+        }
+
+        .live-data {
+            display: flex;
+            justify-content: space-around;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+        .live-data-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 0.5rem 1.5rem;
+            justify-items: center;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .data-box h3 { margin: 0 0 0.5rem 0; font-weight: 300; font-size: 1rem; text-transform: uppercase; }
+        .data-box p { margin: 0; font-size: 2.5rem; font-weight: 700; }
+        #currentThrust { color: var(--accent-color); }
+        #currentPwm { color: var(--pwm-color); }
+
+        .controls button, .export-controls button {
+            width: 100%; padding: 1rem; font-size: 1.2rem; font-weight: 700;
+            border: none; border-radius: 10px; cursor: pointer;
+            transition: all 0.3s ease; color: white; margin-bottom: 0.5rem;
+        }
+
+        #startBtn { background-color: #28a745; }
+        #startBtn:hover { background-color: #218838; }
+        #stopBtn { background-color: #dc3545; }
+        #stopBtn:hover { background-color: #c82333; }
+        #resetBtn { background-color: #ffc107; color: #333; }
+        #resetBtn:hover { background-color: #e0a800; }
+        
+        #exportBtn { background-color: #17a2b8; }
+        #exportBtn:hover { background-color: #138496; }
+        #exportBtn:disabled { background-color: #5a6268; cursor: not-allowed; }
+
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
+        .form-group input, .form-group textarea {
+            width: calc(100% - 22px); padding: 10px; border-radius: 5px;
+            border: 1px solid var(--primary-color); background-color: var(--bg-color);
+            color: var(--text-color); font-family: monospace; font-size: 1rem;
+        }
+        .form-group textarea { resize: vertical; height: 80px; }
+        .help-text { font-size: 0.8rem; color: #aaa; margin-top: 5px; }
+
+        #summaryStats p { margin: 0.5rem 0; font-size: 1rem; }
+        #summaryStats strong { color: var(--pwm-color); }
+        #summaryStats span { color: var(--text-color); font-weight: bold; }
+
+        #statusLog {
+            background-color: rgba(0,0,0,0.2); height: 120px; border-radius: 5px;
+            padding: 10px; overflow-y: scroll; font-family: monospace;
+            font-size: 0.9rem; border: 1px solid var(--primary-color);
+        }
+        #statusLog p { margin: 0 0 5px 0; }
+        .error-log { color: #ff4d4d; font-weight: bold; }
+
+        .scale-factor-group {
+            margin-bottom: 1.5rem;
+            background: rgba(0,0,0,0.08);
+            border-radius: 8px;
+            padding: 1rem;
+            border: 1px solid var(--primary-color);
+        }
+        .scale-factor-group label {
+            font-weight: bold;
+            margin-right: 1rem;
+        }
+        .scale-factor-group input[type="number"] {
+            width: 120px;
+            font-size: 1.1rem;
+            padding: 6px 10px;
+            border-radius: 5px;
+            border: 1px solid var(--primary-color);
+            background: var(--bg-color);
+            color: var(--text-color);
+            margin-right: 1rem;
+        }
+        .scale-factor-group button {
+            padding: 6px 18px;
+            font-size: 1.1rem;
+            border-radius: 6px;
+            border: none;
+            background: var(--accent-color);
+            color: white;
+            cursor: pointer;
+            font-weight: 700;
+            transition: background 0.2s;
+        }
+        .scale-factor-group button:hover {
+            background: #b92d3a;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="card chart-container" id="chartCard">
+            <canvas id="thrustChart"></canvas>
+            <div id="liveTimer" class="live-timer">0.00s</div>
+        </div>
+
+        <div class="card">
+            <h2 class="card-title">Live Data</h2>
+            <div class="live-data live-data-grid">
+                <div class="data-box">
+                    <h3>Thrust (g)</h3>
+                    <p id="currentThrust">0.00</p>
+                </div>
+                <div class="data-box">
+                    <h3>PWM (μs)</h3>
+                    <p id="currentPwm">1000</p>
+                </div>
+                <div class="data-box">
+                    <h3>Voltage (V)</h3>
+                    <p id="currentVoltage">--</p>
+                </div>
+                <div class="data-box">
+                    <h3>Current (A)</h3>
+                    <p id="currentCurrent">--</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="card-title">Controls</h2>
+            <div class="controls">
+                <button id="startBtn">START TEST</button>
+                <button id="stopBtn">STOP TEST</button>
+                <button id="resetBtn">RESET</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="card-title">Test Information</h2>
+            <div class="form-group">
+                <label for="testName">Test Name</label>
+                <input type="text" id="testName">
+            </div>
+            <div class="form-group">
+                <label for="testDetails">Test Details & Profile</label>
+                <textarea id="testDetails"></textarea>
+                <p class="help-text">Tip: Capture motor, prop, battery, and Test Profile line.</p>
+            </div>
+        </div>
+        
+        <div class="card" id="summaryCard" style="display: none;">
+            <h2 class="card-title">Test Summary</h2>
+            <div id="summaryStats">
+                <p><strong>Max Thrust:</strong> <span id="summaryMaxThrust">0</span> g</p>
+                <p><strong>Max PWM:</strong> <span id="summaryMaxPwm">0</span> µs</p>
+                <p><strong>Time near Max Thrust (-50g):</strong> <span id="summaryTimeAtMax">0</span> s</p>
+                <p><strong>Total Test Duration:</strong> <span id="summaryTotalTime">0</span> s</p>
+            </div>
+            <div class="export-controls" style="margin-top: 1rem;">
+                <button id="exportBtn" disabled>Export CSV Results</button>
+            </div>
+        </div>
+
+        <div class="card" style="grid-column: 1 / -1;">
+            <h2 class="card-title">Status Log</h2>
+            <div id="statusLog"></div>
+        </div>
+
+        <!-- Settings Tab/Card -->
+        <div class="card" id="settingsCard" style="grid-column: 1 / -1;">
+            <h2 class="card-title">Settings</h2>
+            <div style="margin-bottom:1rem;">
+                <button id="calibrateBtn" style="width:100%;padding:1rem;font-size:1.2rem;font-weight:700;background:#17a2b8;color:white;border:none;border-radius:10px;cursor:pointer;">Calibrate Weight</button>
+            </div>
+            <div id="calibrationStatus" style="font-size:1rem;color:#aaa;"></div>
+        </div>
+    </div>
+
+    <!-- Calibration Modal -->
+    <div id="calibrationModal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;">
+        <div style="background:#16213e;padding:2rem 2.5rem;border-radius:15px;box-shadow:0 8px 32px #000a;min-width:320px;max-width:90vw;margin:auto;">
+            <h2 style="margin-top:0;color:#e94560;">Scale Calibration</h2>
+            <div style="margin-bottom:1rem;">
+                <strong>Current Scale Factor:</strong>
+                <input type="number" id="modalScaleFactorInput" style="width:110px;font-size:1.1rem;padding:4px 8px;border-radius:5px;border:1px solid #0f3460;background:#1a1a2e;color:#e0e0e0;margin-left:0.5rem;" step="0.01">
+            </div>
+            <div style="margin-bottom:1rem;">
+                <strong>Measured Weight:</strong> <span id="modalMeasuredWeight">0.00</span> g
+            </div>
+            <div style="margin-bottom:1rem;">
+                <label for="modalTargetWeight"><strong>Target Weight (g):</strong></label>
+                <input type="number" id="modalTargetWeight" style="width:100px;font-size:1.1rem;padding:4px 8px;border-radius:5px;border:1px solid #0f3460;background:#1a1a2e;color:#e0e0e0;margin-left:0.5rem;">
+            </div>
+            <div style="margin-bottom:1.5rem;">
+                <button id="modalCaptureBtn" style="padding:0.7rem 2rem;font-size:1.1rem;font-weight:700;background:#28a745;color:white;border:none;border-radius:8px;cursor:pointer;">Capture</button>
+                <button id="modalCancelBtn" style="padding:0.7rem 2rem;font-size:1.1rem;font-weight:700;background:#dc3545;color:white;border:none;border-radius:8px;cursor:pointer;margin-left:1rem;">Close</button>
+            </div>
+            <div id="modalCalibMsg" style="color:#aaa;font-size:1rem;"></div>
+        </div>
+    </div>
+
+    <script>
+        let gateway = `ws://${window.location.hostname}/ws`;
+        let websocket;
+        let thrustChart;
+        let finalTestResults = [];
+        let currentScaleFactor = -204.0; // Default
+        let currentRawReading = 0;
+        let currentMeasuredWeight = 0;
+
+        // DOM Elements
+        const currentThrustEl = document.getElementById('currentThrust');
+        const currentPwmEl = document.getElementById('currentPwm');
+        const currentVoltageEl = document.getElementById('currentVoltage');
+        const currentCurrentEl = document.getElementById('currentCurrent');
+        const statusLogEl = document.getElementById('statusLog');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const exportBtn = document.getElementById('exportBtn');
+        const testNameInput = document.getElementById('testName');
+        const testDetailsInput = document.getElementById('testDetails');
+        const liveTimerEl = document.getElementById('liveTimer');
+        const summaryCardEl = document.getElementById('summaryCard');
+
+        // Calibration modal DOM
+        const calibrateBtn = document.getElementById('calibrateBtn');
+        const calibrationModal = document.getElementById('calibrationModal');
+        const modalScaleFactorInput = document.getElementById('modalScaleFactorInput');
+        const modalMeasuredWeight = document.getElementById('modalMeasuredWeight');
+        const modalTargetWeight = document.getElementById('modalTargetWeight');
+        const modalCaptureBtn = document.getElementById('modalCaptureBtn');
+        const modalCancelBtn = document.getElementById('modalCancelBtn');
+        const modalCalibMsg = document.getElementById('modalCalibMsg');
+
+        let calibrationLiveInterval = null;
+        let lastCalibrationRaw = null;
+        let lastCalibrationTarget = null;
+        let lastCalibrationFactor = null;
+        let testRunning = false;
+        let testTotalTime = 0; // Store total test time for timer display
+        const chartCard = document.getElementById('chartCard');
+
+        window.addEventListener('load', onLoad);
+
+        function onLoad(event) {
+            // Set default test name
+            const now = new Date();
+            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const month = monthNames[now.getMonth()];
+            const day = String(now.getDate()).padStart(2, '0');
+            const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            testNameInput.value = `${month}-${day} Thrust Test - ${time}`;
+
+            // Set default details and profile
+            testDetailsInput.value = "Motor: Sample Motor 2207 1900KV\nProp: 5x4.5x3\nBattery: 4S Lipo\n\nTest Profile: 1200 - 2 - 4; 1600 - 3 - 3; 2000 - 4 - 5; 1000 - 1 - 2";
+            
+            initWebSocket();
+            initChart();
+            initButtons();
+            requestScaleFactor();
+        }
+
+        function initWebSocket() {
+            websocket = new WebSocket(gateway);
+            websocket.onopen = () => {
+                logStatus('Connected to ESP32.');
+                requestScaleFactor();
+            };
+            websocket.onclose = () => {
+                logStatus('Connection lost. Retrying...', 'error');
+                setTimeout(initWebSocket, 2000);
+            };
+            websocket.onmessage = onMessage;
+        }
+
+        function requestScaleFactor() {
+            sendCommand({ command: 'get_scale_factor' });
+        }
+
+        function requestRawReading() {
+            sendCommand({ command: 'get_raw_reading' });
+        }
+
+        function onMessage(event) {
+            const data = JSON.parse(event.data);
+            switch (data.type) {
+                case 'live_data':
+                    updateLiveData(data);
+                    break;
+                case 'status':
+                    logStatus(data.message);
+                    if (data.message && data.message.toLowerCase().includes('starting sequence')) {
+                        startChartLive();
+                    }
+                    if (data.message && data.message.toLowerCase().includes('test finished')) {
+                        stopChartLive();
+                    }
+                    break;
+                case 'safety_shutdown':
+                    logStatus(`SAFETY SHUTDOWN: ${data.message}`, 'error');
+                    exportBtn.disabled = true;
+                    stopChartLive();
+                    break;
+                case 'final_results':
+                    logStatus('Final results received. Calculating stats...');
+                    finalTestResults = data.data;
+                    exportBtn.disabled = false;
+                    // Always use backend data for chart after run
+                    plotFinalResults(data.data);
+                    calculateAndDisplayStats(data.data);
+                    if (data.data && data.data.length > 0) {
+                        testTotalTime = data.data[data.data.length - 1].time / 1000;
+                        liveTimerEl.textContent = testTotalTime.toFixed(2) + 's';
+                    }
+                    // Prevent further live chart updates after final_results
+                    testRunning = false;
+                    break;
+                case 'scale_factor':
+                    updateScaleFactorUI(data.value);
+                    break;
+                case 'raw_reading':
+                    updateRawReadingUI(data.raw, data.weight, data.factor);
+                    break;
+            }
+        }
+
+        // Chart live update control
+        function startChartLive() {
+            testRunning = true;
+            testTotalTime = 0;
+            // Always clear chart for a new run
+            if (thrustChart) {
+                thrustChart.data.labels = [];
+                thrustChart.data.datasets[0].data = [];
+                thrustChart.data.datasets[1].data = [];
+                thrustChart.update();
+            }
+        }
+
+        function stopChartLive() {
+            testRunning = false;
+            // Chart remains visible, timer should show total test time (do not reset)
+            if (testTotalTime > 0) {
+                liveTimerEl.textContent = testTotalTime.toFixed(2) + 's';
+            }
+        }
+
+        function updateScaleFactorUI(value) {
+            currentScaleFactor = value;
+            modalScaleFactorInput.value = value.toFixed(2);
+        }
+
+        function updateRawReadingUI(raw, weight, factor) {
+            currentRawReading = raw;
+            // Use the factor from the input box if user changed it
+            let factorToUse = parseFloat(modalScaleFactorInput.value);
+            if (isNaN(factorToUse)) factorToUse = factor;
+            // Calculate measured weight using the current factor
+            let measured = (factorToUse !== 0) ? raw / factorToUse : 0;
+            currentMeasuredWeight = measured;
+            modalMeasuredWeight.textContent = measured.toFixed(2);
+        }
+
+        function initButtons() {
+            startBtn.onclick = () => {
+                const details = testDetailsInput.value;
+                const sequenceMatch = details.match(/Test Profile:\s*(.*)/i);
+                const sequence = sequenceMatch ? sequenceMatch[1].trim() : '';
+
+                if (sequence) {
+                    resetUI();
+                    logStatus('Sending sequence to ESP32...');
+                    sendCommand({ command: 'start_test', sequence: sequence });
+                } else {
+                    alert('Could not find a "Test Profile:" line in the details box.');
+                }
+            };
+            stopBtn.onclick = () => sendCommand({ command: 'stop_test' });
+            resetBtn.onclick = () => {
+                sendCommand({ command: 'reset' });
+                resetUI();
+            };
+            exportBtn.onclick = () => exportToCsv();
+
+            // Calibration logic
+            calibrateBtn.addEventListener('click', function() {
+                modalTargetWeight.value = '';
+                modalCalibMsg.textContent = '';
+                showCalibrationModal();
+                modalScaleFactorInput.value = currentScaleFactor.toFixed(2);
+                modalMeasuredWeight.textContent = '...';
+                startCalibrationLive();
+            });
+
+            modalCancelBtn.addEventListener('click', function() {
+                stopCalibrationLive();
+                hideCalibrationModal();
+            });
+
+            modalCaptureBtn.addEventListener('click', function() {
+                const target = parseFloat(modalTargetWeight.value);
+                let factorInput = parseFloat(modalScaleFactorInput.value);
+                if (isNaN(target) || Math.abs(target) < 0.01) {
+                    modalCalibMsg.textContent = "Please enter a valid target weight.";
+                    return;
+                }
+                if (currentRawReading === 0) {
+                    modalCalibMsg.textContent = "Raw reading not available. Try again.";
+                    return;
+                }
+                if (lastCalibrationRaw === currentRawReading && lastCalibrationTarget === target) {
+                    modalCalibMsg.textContent = `Scale factor unchanged (${lastCalibrationFactor.toFixed(2)}).`;
+                    return;
+                }
+                const newFactor = currentRawReading / target;
+                modalScaleFactorInput.value = newFactor.toFixed(2);
+                sendCommand({ command: 'set_scale_factor', value: newFactor });
+                modalCalibMsg.textContent = `Set scale factor to ${newFactor.toFixed(2)}.`;
+                calibrationStatus.textContent = `Scale factor updated to ${newFactor.toFixed(2)}.`;
+                lastCalibrationRaw = currentRawReading;
+                lastCalibrationTarget = target;
+                lastCalibrationFactor = newFactor;
+            });
+
+            modalScaleFactorInput.addEventListener('input', function() {
+                let factorToUse = parseFloat(modalScaleFactorInput.value);
+                if (!isNaN(factorToUse) && currentRawReading !== 0) {
+                    let measured = currentRawReading / factorToUse;
+                    modalMeasuredWeight.textContent = measured.toFixed(2);
+                }
+            });
+        }
+
+        function startCalibrationLive() {
+            requestRawReading();
+            if (calibrationLiveInterval) clearInterval(calibrationLiveInterval);
+            calibrationLiveInterval = setInterval(requestRawReading, 300);
+        }
+
+        function stopCalibrationLive() {
+            if (calibrationLiveInterval) {
+                clearInterval(calibrationLiveInterval);
+                calibrationLiveInterval = null;
+            }
+        }
+
+        function showCalibrationModal() {
+            calibrationModal.style.display = 'flex';
+            calibrationModal.style.alignItems = 'center';
+            calibrationModal.style.justifyContent = 'center';
+        }
+
+        function hideCalibrationModal() {
+            calibrationModal.style.display = 'none';
+        }
+
+        function sendCommand(cmdObject) {
+            if (websocket.readyState === WebSocket.OPEN) {
+                websocket.send(JSON.stringify(cmdObject));
+            } else {
+                logStatus('WebSocket is not connected.', 'error');
+            }
+        }
+
+        function logStatus(message, type = 'normal') {
+            const p = document.createElement('p');
+            p.innerHTML = `&gt; ${message}`;
+            if (type === 'error') p.className = 'error-log';
+            statusLogEl.appendChild(p);
+            statusLogEl.scrollTop = statusLogEl.scrollHeight;
+        }
+
+        function resetUI() {
+            if (thrustChart) {
+                thrustChart.data.labels = [];
+                thrustChart.data.datasets[0].data = [];
+                thrustChart.data.datasets[1].data = [];
+                thrustChart.update();
+            }
+            currentThrustEl.textContent = "0.00";
+            currentPwmEl.textContent = "1000";
+            currentVoltageEl.textContent = "--";
+            currentCurrentEl.textContent = "--";
+            liveTimerEl.textContent = "0.00s";
+            exportBtn.disabled = true;
+            finalTestResults = [];
+            summaryCardEl.style.display = 'none';
+            testTotalTime = 0;
+            logStatus("UI Reset.");
+            stopChartLive();
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('thrustChart').getContext('2d');
+            thrustChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'PWM (μs)', data: [], borderColor: 'rgba(30, 144, 255, 1)', yAxisID: 'y'
+                    }, {
+                        label: 'Thrust (g)', data: [], borderColor: 'rgba(233, 69, 96, 1)', yAxisID: 'y1'
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        x: { title: { display: true, text: 'Time (s)', color: 'white' }, ticks: { color: 'white' } },
+                        y: { 
+                            type: 'linear', 
+                            display: true, 
+                            position: 'left', 
+                            title: { display: true, text: 'PWM (μs)', color: 'rgba(30, 144, 255, 1)' }, 
+                            ticks: { color: 'rgba(30, 144, 255, 1)' }, 
+                            min: 1000,
+                            max: 2000,
+                            grid: { drawOnChartArea: true }
+                        },
+                        y1: { 
+                            type: 'linear', 
+                            display: true, 
+                            position: 'right', 
+                            title: { display: true, text: 'Thrust (g)', color: 'rgba(233, 69, 96, 1)' }, 
+                            ticks: { color: 'rgba(233, 69, 96, 1)' }, 
+                            beginAtZero: true,
+                            grid: { drawOnChartArea: false }
+                        }
+                    },
+                    plugins: { legend: { labels: { color: 'white' } } }
+                }
+            });
+            const fullDatasetOptions = { borderWidth: 2, fill: false, tension: 0, pointRadius: 0 };
+            thrustChart.data.datasets[0] = {...thrustChart.data.datasets[0], ...fullDatasetOptions, backgroundColor: 'rgba(30, 144, 255, 0.1)'};
+            thrustChart.data.datasets[1] = {...thrustChart.data.datasets[1], ...fullDatasetOptions, fill: true, backgroundColor: 'rgba(233, 69, 96, 0.2)'};
+        }
+
+        let lastThrust = 0.00;
+        let lastPwm = 1000;
+        let lastVoltage = 0.00;
+        let lastCurrent = 0.00;
+
+        function updateLiveData(data) {
+            // Defensive: parse numbers in case backend sends strings
+            let thrust = (typeof data.thrust === "number") ? data.thrust : parseFloat(data.thrust);
+            let pwm = (typeof data.pwm === "number") ? data.pwm : parseFloat(data.pwm);
+            let voltage = (typeof data.voltage === "number") ? data.voltage : parseFloat(data.voltage);
+            let current = (typeof data.current === "number") ? data.current : parseFloat(data.current);
+
+            // Fallback to last value if still NaN
+            thrust = (!isNaN(thrust)) ? thrust : lastThrust;
+            pwm = (!isNaN(pwm)) ? pwm : lastPwm;
+            voltage = (!isNaN(voltage)) ? voltage : lastVoltage;
+            current = (!isNaN(current)) ? current : lastCurrent;
+
+            // Clamp to reasonable values to avoid wild jumps
+            if (Math.abs(thrust - lastThrust) > 1000) thrust = lastThrust;
+            if (Math.abs(voltage - lastVoltage) > 10) voltage = lastVoltage;
+            if (Math.abs(current - lastCurrent) > 50) current = lastCurrent;
+
+            currentThrustEl.textContent = thrust.toFixed(2);
+            currentPwmEl.textContent = pwm;
+            currentVoltageEl.textContent = voltage.toFixed(2);
+            currentCurrentEl.textContent = current.toFixed(2);
+
+            lastThrust = thrust;
+            lastPwm = pwm;
+            lastVoltage = voltage;
+            lastCurrent = current;
+
+            // Timer logic: use the relative time from the server directly
+            if (testRunning) {
+                let elapsed = data.time / 1000;
+                liveTimerEl.textContent = elapsed.toFixed(2) + 's';
+            } else if (testTotalTime > 0) {
+                liveTimerEl.textContent = testTotalTime.toFixed(2) + 's';
+            } else {
+                liveTimerEl.textContent = "0.00s";
+            }
+
+            // Only update chart if test is running
+            if (testRunning && thrustChart) {
+                // data.time is already the correct relative time in ms. Use it directly.
+                let chartTime = (data.time / 1000).toFixed(2);
+                thrustChart.data.labels.push(chartTime);
+                thrustChart.data.datasets[0].data.push(lastPwm);    // PWM (left)
+                thrustChart.data.datasets[1].data.push(lastThrust); // Thrust (right)
+
+                const maxPoints = 200;
+                if (thrustChart.data.labels.length > maxPoints) {
+                    thrustChart.data.labels.shift();
+                    thrustChart.data.datasets[0].data.shift();
+                    thrustChart.data.datasets[1].data.shift();
+                }
+                thrustChart.update('none');
+            }
+        }
+
+        function plotFinalResults(results) {
+            if (!results || results.length === 0) return;
+            const labels = [];
+            const pwmData = [];
+            const thrustData = [];
+
+            let lastThrustVal = 0.00;
+            let lastPwmVal = 1000;
+
+            for (let i = 0; i < results.length; i++) {
+                const p = results[i];
+                let t = typeof p.thrust === "number" ? p.thrust : parseFloat(p.thrust) || 0;
+                let pwm = typeof p.pwm === "number" ? p.pwm : parseFloat(p.pwm) || 0;
+
+                if (Math.abs(t - lastThrustVal) > 1000) t = lastThrustVal;
+                if (Math.abs(pwm - lastPwmVal) > 1000) pwm = lastPwmVal;
+
+                labels.push((p.time / 1000).toFixed(2));
+                pwmData.push(pwm);
+                thrustData.push(t);
+
+                lastThrustVal = t;
+                lastPwmVal = pwm;
+            }
+
+            thrustChart.data.labels = labels;
+            thrustChart.data.datasets[0].data = pwmData;
+            thrustChart.data.datasets[1].data = thrustData;
+            thrustChart.update();
+        }
+
+        function calculateAndDisplayStats(results) {
+            if (results.length < 2) return;
+
+            let thrustVals = results.map(p => {
+                let t = typeof p.thrust === "number" ? p.thrust : parseFloat(p.thrust) || 0;
+                return t < 0 ? 0 : t;
+            });
+            let maxThrust = Math.max.apply(null, thrustVals);
+            let maxPwm = Math.max.apply(null, results.map(p => typeof p.pwm === "number" ? p.pwm : parseFloat(p.pwm) || 0));
+
+            const thrustThreshold = maxThrust - 50;
+            let timeAtMax = 0;
+            for (let i = 1; i < results.length; i++) {
+                const t1 = thrustVals[i];
+                const t0 = thrustVals[i-1];
+                const avgThrustInSegment = (t1 + t0) / 2;
+                if (avgThrustInSegment >= thrustThreshold) {
+                    const timeDelta = results[i].time - results[i-1].time;
+                    timeAtMax += timeDelta;
+                }
+            }
+
+            const totalTime = results[results.length - 1].time;
+
+            document.getElementById('summaryMaxThrust').textContent = maxThrust.toFixed(2);
+            document.getElementById('summaryMaxPwm').textContent = maxPwm;
+            document.getElementById('summaryTimeAtMax').textContent = (timeAtMax / 1000).toFixed(2);
+            document.getElementById('summaryTotalTime').textContent = (totalTime / 1000).toFixed(2);
+
+            summaryCardEl.style.display = 'block';
+        }
+
+        function exportToCsv() {
+            // Always use the canonical results from the server
+            let exportResults = finalTestResults;
+
+            if (!exportResults || exportResults.length === 0) {
+                alert("No results to export. Run a test first.");
+                return;
+            }
+
+            const now = new Date();
+            const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            const timeStr = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+            const testName = testNameInput.value.trim().replace(/[^a-z0-9]/gi, '_') || "ThrustTest";
+            const fileName = `${testName}_${dateStr}_${timeStr}.csv`;
+            
+            let csvContent = "";
+            const detailsHeader = testDetailsInput.value.trim().split('\n').map(line => `# ${line}`).join('\n');
+            csvContent += detailsHeader + '\n\n';
+            csvContent += "timestamp_ms,thrust_g,pwm_us\n";
+            exportResults.forEach(row => {
+                csvContent += `${row.time},${parseFloat(row.thrust).toFixed(3)},${row.pwm}\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            if (link.download !== undefined) {
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", fileName);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+            logStatus(`Exported results to ${fileName}`);
+        }
+    </script>
+</body>
+</html>

@@ -1,233 +1,497 @@
+#include "FS.h"
+#include "HX711_ADC.h"
+#include "LittleFS.h"
 #include <Arduino.h>
-#include <WiFi.h>
-#include <ESPAsyncWebServer.h>
-#include <HX711.h>
+#include <ArduinoJson.h>
 #include <AsyncTCP.h>
-#include <FS.h>
-#include <SPIFFS.h>
+#include <ESPAsyncWebServer.h>
+#include <WiFi.h>
+#include <vector>
 
-//файловая система
-File logFile;
-String logFilename = "";
+// --- Configuration ---
+const char *ssid = "romadOK24";
+const char *password = "boosido3087";
 
-bool isRunning = false;
-bool isPaused = false;
-bool autoPaused = false;
-String currentCsvPath = "";
+// Pin Assignments
+const int HX711_DOUT_PIN = 21;
+const int HX711_SCK_PIN = 22;
+const int ESC_PIN = 27;
+const int ESC_TELEM_PIN = 32; // <-- Changed from 4 to 15
 
-// Подключение HX711 к ESP32
-#define DT 21  // Пин данных от HX711
-#define SCK 22 // Пин тактового сигнала от HX711
-HX711 scale;
+// ESC Configuration
+const int ESC_PWM_CHANNEL = 0;
+const int PWM_FREQ = 50;
+const int PWM_RESOLUTION = 16;
+const int MIN_PULSE_WIDTH = 1000;
+const int MAX_PULSE_WIDTH = 2000;
 
-// Данные Wi-Fi
-const char* ssid = "romadOK24";
-const char* password = "boosido3087";
+// Safety Configuration
+const float ABNORMAL_THRUST_DROP =
+    75.0; // grams. Trigger safety if thrust drops by this much while PWM is
+          // stable.
+const unsigned long SAFETY_CHECK_INTERVAL =
+    100; // ms. How often to check for anomalies.
 
-// Переменные для веса
-float tareOffset = 0.0;        // Смещение нуля (тарировка)
-float weightGrams = 0.0;       // Текущий измеренный вес
-float previousWeight = 0.0;    // Предыдущее значение веса для фильтрации
-const float deadZone = 3.0;    // Мёртвая зона (не учитывать колебания менее 3 г)
+// --- Global Objects ---
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
+HX711_ADC LoadCell(HX711_DOUT_PIN, HX711_SCK_PIN);
 
-// Сглаживание значений
-#define SMOOTHING 3
-float smoothBuffer[SMOOTHING] = {0};
-int smoothIndex = 0;
+// --- State Management ---
+enum State {
+  IDLE,
+  ARMING,
+  PRE_TEST_TARE,
+  RUNNING_SEQUENCE,
+  SAFETY_SHUTDOWN,
+  TEST_FINISHED
+};
+State currentState = IDLE;
 
-float maxRecordedWeight = 0.0; // Максимальный зафиксированный вес
+// --- Data & Sequence Storage ---
+struct DataPoint {
+  unsigned long timestamp;
+  float thrust;
+  int pwm;
+};
+const size_t MAX_TEST_SAMPLES = 6000;
+std::vector<DataPoint> testResults;
 
-AsyncWebServer server(80); // Веб-сервер на порту 80
+struct TestStep {
+  int pwm;
+  unsigned long spinup_ms;
+  unsigned long stable_ms;
+};
+std::vector<TestStep> testSequence;
 
-// Функция сглаживания — скользящее среднее из последних N значений
-float getSmoothedWeight(float raw) {
-  smoothBuffer[smoothIndex] = raw;
-  smoothIndex = (smoothIndex + 1) % SMOOTHING;
+// Timers and trackers
+unsigned long testStartTime = 0;
+unsigned long stepStartTime = 0;
+int currentSequenceStep = 0;
+int currentPwm = MIN_PULSE_WIDTH;
+int previousPwmForRamp = MIN_PULSE_WIDTH;
 
-  float sum = 0;
-  for (int i = 0; i < SMOOTHING; i++) {
-    sum += smoothBuffer[i];
+// Safety trackers
+float lastThrustForSafetyCheck = 0.0;
+unsigned long lastSafetyCheckTime = 0;
+
+// --- Scale Factor Persistent Storage ---
+float scaleFactor = -204.0; // Default calibration value
+
+const char *SCALE_FACTOR_FILE = "/scale_factor.txt";
+
+void saveScaleFactor(float value) {
+  File file = LittleFS.open(SCALE_FACTOR_FILE, "w");
+  if (file) {
+    file.printf("%.6f", value);
+    file.close();
+    Serial.printf("Scale factor saved: %.6f\n", value);
+  } else {
+    Serial.println("Failed to save scale factor!");
   }
-  return sum / SMOOTHING;
 }
 
-//Регулятор по PWM
-const int escPin = 17; //пин регулятора
-int pwmValue = 1000; // стартовое значение
-
-// Преобразование из микросекунд в значение duty для 16 бит (20 мс = 65536)
-uint32_t usToDuty(int us) {
-  return (uint32_t)(us * 65536L / 20000L); // 20 мс период
-}
-
-
-void setup() {
-
-  //Настраиваем PWM регулятор
-  ledcSetup(0, 50, 16);        // канал 0, 50 Гц, 16-битное разрешение
-  ledcAttachPin(escPin, 0);    // подключить пин к каналу
-  ledcWrite(0, usToDuty(pwmValue));  // установить сигнал
-
-  Serial.begin(115200); // Запускаем сериал-порт для отладки
-
-  // 3. Инициализация HX711
-  scale.begin(DT, SCK);
-  delay(500);
-  scale.set_scale(210);  // Устанавливаем коэффициент шкалы (подобран вручную)
-  scale.tare();           // Устанавливаем текущий вес как ноль
-
-  //Если весы не определились, пишем сообщение
-  if (!scale.is_ready()) {
-    Serial.println("HX711 не подключен! Проверьте соединение.");
-  };
-
-   // Инициализация SPIFFS
-  if (!SPIFFS.begin(true)) {
-    Serial.println("Ошибка инициализации SPIFFS");
-    return;
+float loadScaleFactor() {
+  if (LittleFS.exists(SCALE_FACTOR_FILE)) {
+    File file = LittleFS.open(SCALE_FACTOR_FILE, "r");
+    if (file) {
+      String val = file.readString();
+      file.close();
+      float loaded = val.toFloat();
+      Serial.printf("Loaded scale factor: %.6f\n", loaded);
+      return loaded;
+    }
   }
-
-
-// 2. Подключение к Wi-Fi
-WiFi.begin(ssid, password);
-while (WiFi.status() != WL_CONNECTED) {
-  delay(500);
-  Serial.print(".");
+  Serial.println("Using default scale factor.");
+  return scaleFactor;
 }
-Serial.println("\nWi-Fi подключен: " + WiFi.localIP().toString());
 
-// ✅ просто запускаем сервер сразу:
-server.begin();
+// --- Helper Functions ---
+void notifyClients(String message) { ws.textAll(message); }
 
-  // 5. Главная страница из SPIFFS
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/weight_ui.html", "text/html");
-  });
+void setEscThrottlePwm(int pulse_width_us) {
+  if (pulse_width_us < MIN_PULSE_WIDTH)
+    pulse_width_us = MIN_PULSE_WIDTH;
+  if (pulse_width_us > MAX_PULSE_WIDTH)
+    pulse_width_us = MAX_PULSE_WIDTH;
 
-  // Обработка запроса текущего веса с фильтрацией и сглаживанием
-  server.on("/weight", HTTP_GET, [](AsyncWebServerRequest* request){
-    float raw = scale.get_units(5);                  // Считываем 5 измерений
-    float adjusted = raw - tareOffset;               // Применяем тарировку
-    float absWeight = abs(adjusted);                 // Модуль веса
+  currentPwm = pulse_width_us; // Update global PWM tracker
 
-    float smoothed = getSmoothedWeight(absWeight);   // Применяем сглаживание
+  uint32_t duty = (65535UL * pulse_width_us) / 20000;
+  ledcWrite(ESC_PWM_CHANNEL, duty);
+}
 
-    // Обновляем вес, если изменение превышает deadZone
-    if (abs(smoothed - previousWeight) > deadZone) {
-      weightGrams = smoothed;
-      previousWeight = smoothed;
+void triggerSafetyShutdown(const char *reason) {
+  setEscThrottlePwm(MIN_PULSE_WIDTH);
+  currentState = SAFETY_SHUTDOWN;
+  Serial.printf("SAFETY SHUTDOWN TRIGGERED: %s\n", reason);
+
+  StaticJsonDocument<200> doc;
+  doc["type"] = "safety_shutdown";
+  doc["message"] = reason;
+  String output;
+  serializeJson(doc, output);
+  notifyClients(output);
+  testSequence.clear();
+}
+
+void finishTest() {
+  setEscThrottlePwm(MIN_PULSE_WIDTH);
+  currentState = TEST_FINISHED;
+  Serial.println("Test sequence finished.");
+
+  StaticJsonDocument<200> doc;
+  doc["type"] = "status";
+  doc["message"] = "Test finished. Sending final results.";
+  String output;
+  serializeJson(doc, output);
+  notifyClients(output);
+
+  // Create and send final results JSON
+  DynamicJsonDocument finalDoc(15000);
+  finalDoc["type"] = "final_results";
+  JsonArray data = finalDoc.createNestedArray("data");
+  for (const auto &point : testResults) {
+    JsonObject dataPoint = data.createNestedObject();
+    dataPoint["time"] = point.timestamp;
+    dataPoint["thrust"] = point.thrust;
+    dataPoint["pwm"] = point.pwm;
+  }
+  String finalOutput;
+  serializeJson(finalDoc, finalOutput);
+  notifyClients(finalOutput);
+
+  // Clear data for next run
+  testResults.clear();
+  currentState = IDLE;
+}
+
+bool parseAndStoreSequence(const char *sequenceStr) {
+  testSequence.clear();
+  char *sequenceCopy =
+      strdup(sequenceStr); // Make a copy since strtok modifies the string
+  char *stepToken = strtok(sequenceCopy, ";");
+
+  while (stepToken != NULL) {
+    TestStep step;
+    int pwm, spinup, stable;
+    if (sscanf(stepToken, "%d - %d - %d", &pwm, &spinup, &stable) == 3) {
+      step.pwm = pwm;
+      step.spinup_ms = spinup * 1000;
+      step.stable_ms = stable * 1000;
+      testSequence.push_back(step);
+    } else {
+      Serial.printf("Failed to parse step: %s\n", stepToken);
+      free(sequenceCopy);
+      return false; // Parsing failed
     }
+    stepToken = strtok(NULL, ";");
+  }
+  free(sequenceCopy);
+  return !testSequence.empty();
+}
 
-    // Если вес меньше deadZone, сбрасываем в 0
-    if (smoothed < deadZone) {
-      weightGrams = 0;
-      previousWeight = 0;
-    }
+// --- WebSocket Event Handler ---
+void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
+               AwsEventType type, void *arg, uint8_t *data, size_t len) {
+  if (type == WS_EVT_CONNECT) {
+    Serial.printf("WebSocket client #%u connected\n", client->id());
+  } else if (type == WS_EVT_DISCONNECT) {
+    Serial.printf("WebSocket client #%u disconnected\n", client->id());
+  } else if (type == WS_EVT_DATA) {
+    AwsFrameInfo *info = (AwsFrameInfo *)arg;
+    if (info->final && info->index == 0 && info->len == len &&
+        info->opcode == WS_TEXT) {
+      data[len] = 0;
 
-    // Гарантируем положительное значение
-    float filtered = weightGrams < 0 ? 0 : weightGrams;
-
-    // Отправляем JSON-ответ на клиент
-    String json = "{\"weight\":" + String(filtered, 2) + "}";
-    request->send(200, "application/json", json);
-  });
-
-  // Обработка запроса на тарировку (обнуление веса и максимумов)
-  server.on("/tare", HTTP_GET, [](AsyncWebServerRequest* request){
-    tareOffset = scale.get_units(10);  // Новая точка отсчета
-    weightGrams = 0;
-    previousWeight = 0;
-    maxRecordedWeight = 0;
-
-    // Сброс буфера сглаживания
-    for (int i = 0; i < SMOOTHING; i++) {
-      smoothBuffer[i] = 0;
-    }
-    smoothIndex = 0;
-
-    request->send(200, "text/plain", "Tared");
-  });
-
-  //Работа с PWM
-  server.on("/thrust", HTTP_GET, [](AsyncWebServerRequest* request){
-    if (request->hasParam("value")) {
-      int val = request->getParam("value")->value().toInt();
-      if (val >= 1000 && val <= 2000) {
-        pwmValue = val;
-        ledcWrite(0, usToDuty(pwmValue));
-        Serial.println("PWM (из браузера): " + String(pwmValue));
-        request->send(200, "text/plain", "PWM updated");
+      StaticJsonDocument<512> doc;
+      DeserializationError error = deserializeJson(doc, (char *)data);
+      if (error) {
         return;
       }
+
+      const char *command = doc["command"];
+
+      if (strcmp(command, "start_test") == 0) {
+        if (currentState == IDLE) {
+          const char *sequence = doc["sequence"];
+          Serial.printf("Received test sequence: %s\n", sequence);
+          if (parseAndStoreSequence(sequence)) {
+            Serial.println(
+                "Sequence parsed successfully. Starting pre-test tare.");
+            currentState = PRE_TEST_TARE;
+            stepStartTime = millis(); // Use step timer for pre-tare
+          } else {
+            triggerSafetyShutdown("Invalid test sequence format.");
+          }
+        }
+      } else if (strcmp(command, "stop_test") == 0) {
+        triggerSafetyShutdown("Test stopped by user.");
+      } else if (strcmp(command, "reset") == 0) {
+        setEscThrottlePwm(MIN_PULSE_WIDTH);
+        currentState = IDLE;
+        testResults.clear();
+        testSequence.clear();
+        notifyClients("{\"type\":\"status\", \"message\":\"System reset.\"}");
+      } else if (strcmp(command, "tare") == 0) {
+        LoadCell.tare();
+        notifyClients("{\"type\":\"status\", \"message\":\"Scale tared.\"}");
+      } else if (strcmp(command, "set_scale_factor") == 0) {
+        if (doc.containsKey("value")) {
+          float newFactor = doc["value"];
+          scaleFactor = newFactor;
+          LoadCell.setCalFactor(scaleFactor);
+          saveScaleFactor(scaleFactor);
+          StaticJsonDocument<128> resp;
+          resp["type"] = "scale_factor";
+          resp["value"] = scaleFactor;
+          String out;
+          serializeJson(resp, out);
+          notifyClients(out);
+          Serial.printf("Scale factor set to: %.6f\n", newFactor);
+        }
+      } else if (strcmp(command, "get_scale_factor") == 0) {
+        StaticJsonDocument<128> resp;
+        resp["type"] = "scale_factor";
+        resp["value"] = scaleFactor;
+        String out;
+        serializeJson(resp, out);
+        notifyClients(out);
+      } else if (strcmp(command, "get_raw_reading") == 0) {
+        LoadCell.update();
+        long raw = LoadCell.getData();
+        float weight = LoadCell.getData();
+        StaticJsonDocument<128> resp;
+        resp["type"] = "raw_reading";
+        resp["raw"] = raw;
+        resp["weight"] = weight;
+        resp["factor"] = scaleFactor;
+        String out;
+        serializeJson(resp, out);
+        notifyClients(out);
+      }
     }
-    request->send(400, "text/plain", "Invalid PWM value");
-  });
-
-  server.on("/reset", HTTP_GET, [](AsyncWebServerRequest* request){
-    // Генерация нового имени файла
-    time_t now = time(nullptr);
-    struct tm* tm_info = localtime(&now);
-    char filename[32];
-    strftime(filename, sizeof(filename), "/log-%Y%m%d-%H%M%S.csv", tm_info);
-    logFilename = String(filename);
-  
-    // Создание файла и запись заголовка
-    logFile = SPIFFS.open(logFilename, FILE_WRITE);
-    if (logFile) {
-      logFile.println("time,weight,pwm");
-      logFile.close();
-      request->send(200, "text/plain", "Log file created: " + logFilename);
-    } else {
-      request->send(500, "text/plain", "Failed to create log file");
-    }
-  });
-
-  // Обработчик загрузки CSV файла
-  server.on("/download", HTTP_GET, [](AsyncWebServerRequest *request){
-    if (currentCsvPath != "" && SPIFFS.exists(currentCsvPath)) {
-      request->send(SPIFFS, currentCsvPath, "text/csv");
-    } else {
-      request->send(404, "text/plain", "Файл не найден");
-    }
-  });
-
-  //Путь к странице с результатами
-  server.on("/results", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/results.html", "text/html");
-  });
-
-  //разрешаем чтение папки с логами
-  server.serveStatic("/output", SPIFFS, "/output");
-
+  }
 }
 
+// --- Initialization ---
+void initWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi ..");
+
+  unsigned long startAttemptTime = millis();
+  bool connected = false;
+  while (millis() - startAttemptTime < 10000) { // 10 second timeout
+    if (WiFi.status() == WL_CONNECTED) {
+      connected = true;
+      break;
+    }
+    Serial.print('.');
+    delay(500);
+  }
+
+  if (connected) {
+    Serial.println("\nConnected!");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\nWiFi Connection Failed. Starting AP Mode.");
+    WiFi.softAP("ThrustScale_AP");
+    Serial.print("AP IP Address: ");
+    Serial.println(WiFi.softAPIP());
+  }
+}
+
+void initLittleFS() {
+  if (!LittleFS.begin()) {
+    Serial.println("An error has occurred while mounting LittleFS");
+    return;
+  }
+  Serial.println("LittleFS mounted successfully");
+}
+
+void initLoadCell() {
+  LoadCell.begin();
+  scaleFactor = loadScaleFactor();
+  LoadCell.setCalFactor(scaleFactor);
+  Serial.printf("Using scale factor: %.6f\n", scaleFactor);
+  Serial.println("Taring scale at startup...");
+  LoadCell.tare();
+  Serial.println("Startup Tare Complete.");
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  initLittleFS();
+  initWiFi();
+  initLoadCell();
+
+  // Init ESC
+  ledcSetup(ESC_PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(ESC_PIN, ESC_PWM_CHANNEL);
+  currentState = ARMING;
+
+  pinMode(ESC_TELEM_PIN, INPUT_PULLDOWN);
+  attachInterrupt(digitalPinToInterrupt(ESC_TELEM_PIN), handleTelemInterrupt,
+                  CHANGE);
+
+  ws.onEvent(onWsEvent);
+  server.addHandler(&ws);
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(LittleFS, "/index.html", "text/html");
+  });
+  server.begin();
+}
+
+// --- ESC Telemetry (Voltage/Current) ---
+// --- ESC Telemetry (Voltage/Current) ---
+float escVoltage = 0.0;
+float escCurrent = 0.0;
+
+volatile uint32_t latestPulseWidth = 0;
+volatile unsigned long pulseStartTime = 0;
+
+void IRAM_ATTR handleTelemInterrupt() {
+  if (digitalRead(ESC_TELEM_PIN) == HIGH) {
+    pulseStartTime = micros();
+  } else {
+    latestPulseWidth = micros() - pulseStartTime;
+  }
+}
+
+void readEscTelemetry() {
+  // Atomic read of volatile variable (uint32_t is atomic on ESP32 usually, but
+  // good practice to be safe if needed)
+  uint32_t pulse = latestPulseWidth;
+
+  // Reset to 0 to detect if signal is lost (optional, or keep last known value)
+  // latestPulseWidth = 0;
+
+  if (pulse > 1000 && pulse < 2000) {
+    escVoltage = (pulse - 1000) / 100.0;
+  } else if (pulse > 2000 && pulse < 3000) {
+    escCurrent = (pulse - 2000) / 100.0;
+  }
+}
+
+// --- Main Loop (State Machine) ---
 void loop() {
-  
-  float weight = abs(scale.get_units());
-  Serial.print("Текущий вес: ");
-  Serial.print(weight, 2);
-  Serial.println(" г");
-  delay(500);
+  ws.cleanupClients();
+  readEscTelemetry();
 
-  // Пример: опрашивать значение из Serial (или HTTP / WebSocket)
-  if (Serial.available()) {
-    int val = Serial.parseInt();
-    if (val >= 1000 && val <= 2000) {
-      pwmValue = val;
-      ledcWrite(0, usToDuty(pwmValue));
-      Serial.println("PWM set to " + String(pwmValue));
+  // Send live telemetry ONLY when not running a test sequence
+  if (currentState != RUNNING_SEQUENCE) {
+    StaticJsonDocument<200> telemDoc;
+    telemDoc["type"] = "live_data";
+    telemDoc["time"] = millis(); // Absolute time, not relevant for idle
+    if (LoadCell.update()) {
+      telemDoc["thrust"] = LoadCell.getData();
+    } else {
+      telemDoc["thrust"] = 0.0;
     }
+    telemDoc["pwm"] = currentPwm;
+    telemDoc["voltage"] = escVoltage;
+    telemDoc["current"] = escCurrent;
+    String telemOutput;
+    serializeJson(telemDoc, telemOutput);
+    notifyClients(telemOutput);
   }
-  delay(20);
 
-  //запись лога в файл
-  if (isRunning && !isPaused && !autoPaused) {
-    File file = SPIFFS.open(currentCsvPath, FILE_APPEND);
-    if (file) {
-      unsigned long timeMs = millis();
-      file.printf("%lu,%.2f,%d\n", timeMs, weight, pwmValue);
-      file.close();
-    }
+  switch (currentState) {
+  case ARMING: {
+    Serial.println("Arming ESC... Sending min throttle.");
+    setEscThrottlePwm(MIN_PULSE_WIDTH);
+    delay(2100);
+    notifyClients("{\"type\":\"status\", \"message\":\"ESC Armed. Ready.\"}");
+    currentState = IDLE;
+    break;
   }
-  
+  case PRE_TEST_TARE: {
+    if (millis() - stepStartTime < 2000) {
+      setEscThrottlePwm(1100);
+    } else {
+      setEscThrottlePwm(MIN_PULSE_WIDTH);
+      delay(500);
+      LoadCell.tare();
+      Serial.println("Pre-test tare complete.");
+      notifyClients("{\"type\":\"status\", \"message\":\"Pre-test tare "
+                    "complete. Starting sequence.\"}");
+
+      currentState = RUNNING_SEQUENCE;
+      currentSequenceStep = 0;
+      testStartTime = millis();
+      stepStartTime = millis();
+      previousPwmForRamp = MIN_PULSE_WIDTH;
+      testResults.clear();
+    }
+    break;
+  }
+  case RUNNING_SEQUENCE: {
+    if (currentSequenceStep >= testSequence.size()) {
+      finishTest();
+      break;
+    }
+
+    TestStep &step = testSequence[currentSequenceStep];
+    unsigned long elapsedInStep = millis() - stepStartTime;
+
+    if (elapsedInStep < step.spinup_ms) {
+      int new_pwm =
+          map(elapsedInStep, 0, step.spinup_ms, previousPwmForRamp, step.pwm);
+      setEscThrottlePwm(new_pwm);
+    } else if (elapsedInStep < (step.spinup_ms + step.stable_ms)) {
+      setEscThrottlePwm(step.pwm);
+    } else {
+      previousPwmForRamp = step.pwm;
+      currentSequenceStep++;
+      stepStartTime = millis();
+    }
+
+    if (LoadCell.update()) {
+      unsigned long currentTime = millis() - testStartTime;
+      float currentThrust = LoadCell.getData();
+
+      if (testResults.size() < MAX_TEST_SAMPLES) {
+        testResults.push_back({currentTime, currentThrust, currentPwm});
+      } else if (testResults.size() == MAX_TEST_SAMPLES) {
+        // Mark full (optional: could add a flag or log once)
+        testResults.push_back(
+            {currentTime, currentThrust, currentPwm}); // Add one last point
+        Serial.println("Memory limit reached for test results!");
+      }
+
+      // Send live data
+      StaticJsonDocument<200> doc;
+      doc["type"] = "live_data";
+      doc["time"] = currentTime; // This is the relative time since test start
+      doc["thrust"] = currentThrust;
+      doc["pwm"] = currentPwm;
+      doc["voltage"] = escVoltage;
+      doc["current"] = escCurrent;
+      String output;
+      serializeJson(doc, output);
+      notifyClients(output);
+
+      if (millis() - lastSafetyCheckTime > SAFETY_CHECK_INTERVAL) {
+        bool isStablePhase = (elapsedInStep > step.spinup_ms);
+        if (currentPwm > 1150 && isStablePhase) {
+          if ((lastThrustForSafetyCheck - currentThrust) >
+              ABNORMAL_THRUST_DROP) {
+            triggerSafetyShutdown("Abnormal thrust drop detected!");
+          }
+        }
+        lastThrustForSafetyCheck = currentThrust;
+        lastSafetyCheckTime = millis();
+      }
+    }
+    break;
+  }
+  case IDLE:
+  case SAFETY_SHUTDOWN:
+  case TEST_FINISHED: {
+    break;
+  }
+  }
+  delay(1);
 }
