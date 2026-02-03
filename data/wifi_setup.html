@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thrust Scale – WiFi Setup</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      margin: 0;
+      padding: 1rem;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 1.5rem;
+      max-width: 420px;
+      width: 100%;
+      border: 1px solid #0f3460;
+    }
+    h1 {
+      margin: 0 0 1rem;
+      color: #e94560;
+      font-size: 1.25rem;
+    }
+    .msg {
+      padding: 0.75rem;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    .msg.show { display: block; }
+    .msg.success { background: #0d3d2d; color: #90ee90; }
+    .msg.error { background: #3d1d1d; color: #ffb0b0; }
+    .msg.info { background: #1d2d3d; color: #b0d0ff; }
+    label { display: block; margin-bottom: 0.25rem; font-size: 0.9rem; }
+    select, input[type="text"], input[type="password"] {
+      width: 100%;
+      padding: 0.6rem;
+      margin-bottom: 1rem;
+      border: 1px solid #0f3460;
+      border-radius: 6px;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-size: 1rem;
+    }
+    button {
+      width: 100%;
+      padding: 0.75rem;
+      background: #e94560;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .scan-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+    .scan-btn { width: auto; padding: 0.5rem 1rem; margin-bottom: 1rem; }
+    small { color: #888; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>WiFi Setup</h1>
+    <p class="msg info show" id="hint">Connect to network <strong>ThrustScale_Setup</strong>, then open this page. Choose your WiFi below and enter the password.</p>
+    <p class="msg" id="result"></p>
+
+    <div class="scan-row">
+      <label for="networks">Network</label>
+      <button type="button" class="scan-btn" id="scanBtn">Scan</button>
+    </div>
+    <select id="networks" size="6">
+      <option value="">-- Scan for networks --</option>
+    </select>
+    <label for="ssid">Or type SSID (hidden network)</label>
+    <input type="text" id="ssid" placeholder="Network name" autocomplete="off">
+    <label for="password">Password</label>
+    <input type="password" id="password" placeholder="WiFi password" autocomplete="off">
+    <button type="button" id="submitBtn">Connect &amp; Save</button>
+  </div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const authToken = urlParams.get('token') || '';
+    const authUrl = (path) => authToken ? `${path}${path.includes('?') ? '&' : '?'}token=${encodeURIComponent(authToken)}` : path;
+    const authHeaders = (extra = {}) => {
+      if (!authToken) return extra;
+      return Object.assign({ 'X-Auth-Token': authToken }, extra);
+    };
+
+    const networksEl = document.getElementById('networks');
+    const ssidEl = document.getElementById('ssid');
+    const passwordEl = document.getElementById('password');
+    const submitBtn = document.getElementById('submitBtn');
+    const scanBtn = document.getElementById('scanBtn');
+    const resultEl = document.getElementById('result');
+    const hintEl = document.getElementById('hint');
+
+    function showResult(text, isError) {
+      resultEl.textContent = text;
+      resultEl.className = 'msg show ' + (isError ? 'error' : 'success');
+    }
+
+    function clearResult() {
+      resultEl.className = 'msg';
+      resultEl.textContent = '';
+    }
+
+    async function scan() {
+      scanBtn.disabled = true;
+      scanBtn.textContent = 'Scanning…';
+      networksEl.innerHTML = '<option value="">Scanning…</option>';
+      try {
+        const r = await fetch(authUrl('/api/scan'), { headers: authHeaders() });
+        const list = await r.json();
+        networksEl.innerHTML = '';
+        if (list.length === 0) {
+          networksEl.innerHTML = '<option value="">No networks found</option>';
+        } else {
+          list.forEach(function(n) {
+            const opt = document.createElement('option');
+            opt.value = n.ssid;
+            opt.textContent = (n.secure ? '🔒 ' : '') + n.ssid + ' (' + n.rssi + ' dBm)';
+            networksEl.appendChild(opt);
+          });
+        }
+      } catch (e) {
+        networksEl.innerHTML = '<option value="">Scan failed</option>';
+        showResult('Scan failed. Try again.', true);
+      }
+      scanBtn.disabled = false;
+      scanBtn.textContent = 'Scan';
+    }
+
+    networksEl.addEventListener('change', function() {
+      ssidEl.value = networksEl.value || '';
+    });
+
+    async function submit() {
+      const ssid = ssidEl.value.trim() || networksEl.value;
+      const password = passwordEl.value;
+      if (!ssid) {
+        showResult('Select or enter a network name.', true);
+        return;
+      }
+      clearResult();
+      submitBtn.disabled = true;
+      try {
+        const r = await fetch(authUrl('/api/wifi'), {
+          method: 'POST',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ ssid: ssid, password: password })
+        });
+        let errMsg = 'Connection failed. Check password and try again.';
+        if (!r.ok) {
+          try {
+            const data = await r.json();
+            if (data && data.error) errMsg = data.error;
+          } catch (_) {}
+        }
+        if (r.ok) {
+          let msg = 'Saved. Device will reboot. ';
+          try {
+            const data = await r.json();
+            if (data && data.ip) {
+              msg += 'After reboot open http://' + data.ip + ' to use the app.';
+            } else {
+              msg += 'Switch to your Wi‑Fi and check your router’s connected devices for the board’s IP.';
+            }
+          } catch (_) {
+            msg += 'Switch to your Wi‑Fi and check your router’s connected devices for the board’s IP.';
+          }
+          showResult(msg, false);
+          hintEl.classList.remove('show');
+        } else {
+          showResult(errMsg, true);
+          submitBtn.disabled = false;
+        }
+      } catch (e) {
+        showResult('If ThrustScale_Setup disappeared, setup likely succeeded. Switch your phone to your normal Wi‑Fi, then check your router’s connected devices list or plug the board into USB and open Serial Monitor (115200) to see the printed IP.', false);
+        submitBtn.disabled = false;
+      }
+    }
+
+    scanBtn.addEventListener('click', scan);
+    submitBtn.addEventListener('click', submit);
+    document.addEventListener('DOMContentLoaded', scan);
+  </script>
+</body>
+</html>

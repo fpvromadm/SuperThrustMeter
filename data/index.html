@@ -15,26 +15,231 @@
             --accent-color: #e94560;
             --pwm-color: #1E90FF;
             --text-color: #e0e0e0;
+            --header-height: 64px;
+            --sidebar-width: 320px;
             --font-family: 'Roboto', sans-serif;
         }
 
         body {
             font-family: var(--font-family);
-            background-color: var(--bg-color);
+            background: radial-gradient(1200px 600px at 20% -10%, #243460 0%, #1a1a2e 55%, #0f121f 100%);
             color: var(--text-color);
             margin: 0;
-            padding: 1rem;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
             min-height: 100vh;
+        }
+
+        .app {
+            display: grid;
+            grid-template-columns: var(--sidebar-width) 1fr;
+            grid-template-rows: auto 1fr;
+            gap: 1.25rem;
+            padding: 1.25rem;
+            min-height: 100vh;
+        }
+
+        .topbar {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 0.85rem 1rem;
+            border-radius: 16px;
+            background: linear-gradient(135deg, rgba(15, 52, 96, 0.55), rgba(22, 33, 62, 0.8));
+            border: 1px solid rgba(233, 69, 96, 0.25);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
+            backdrop-filter: blur(8px);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.9rem;
+        }
+
+        .brand-mark {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            background: linear-gradient(145deg, #e94560, #7c2231);
+            display: grid;
+            place-items: center;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: white;
+        }
+
+        .brand-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .brand-subtitle {
+            margin: 0.15rem 0 0 0;
+            font-size: 0.85rem;
+            color: #b9c2d6;
+        }
+
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .sim-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.65rem;
+            border-radius: 999px;
+            border: 1px solid rgba(233, 69, 96, 0.35);
+            background: rgba(0, 0, 0, 0.25);
+            font-size: 0.85rem;
+        }
+
+        .sim-toggle span {
+            color: #c9d0e1;
+            font-weight: 600;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.15);
+            transition: 0.2s;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            top: 2px;
+            background: #e0e0e0;
+            transition: 0.2s;
+            border-radius: 50%;
+        }
+
+        .switch input:checked + .slider {
+            background: rgba(46, 204, 113, 0.35);
+            border-color: rgba(46, 204, 113, 0.6);
+        }
+
+        .switch input:checked + .slider:before {
+            transform: translateX(20px);
+            background: #2ecc71;
+        }
+
+        .status-pill {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.35rem 0.8rem;
+            border-radius: 999px;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--primary-color);
+            font-size: 0.85rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #dc3545;
+            box-shadow: 0 0 8px rgba(220, 53, 69, 0.8);
+        }
+
+        .status-pill[data-state="connected"] {
+            border-color: #2ecc71;
+            color: #c7f5d5;
+        }
+
+        .status-pill[data-state="connected"] .status-dot {
+            background: #2ecc71;
+            box-shadow: 0 0 8px rgba(46, 204, 113, 0.9);
+        }
+
+        .topbar-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 999px;
+            border: 1px solid rgba(233, 69, 96, 0.5);
+            background: rgba(233, 69, 96, 0.15);
+            color: #f6c1cb;
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: transform 0.2s ease, background 0.2s ease;
+        }
+
+        .topbar-btn:hover {
+            transform: translateY(-1px);
+            background: rgba(233, 69, 96, 0.3);
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            position: sticky;
+            top: 1.25rem;
+            align-self: start;
+        }
+
+        .sidebar .card {
+            padding: 1.1rem;
+        }
+
+        .sidebar-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .sidebar-nav a {
+            padding: 0.5rem 0.75rem;
+            border-radius: 8px;
+            text-decoration: none;
+            color: var(--text-color);
+            border: 1px solid transparent;
+            background: rgba(0, 0, 0, 0.2);
+            transition: border 0.2s ease, transform 0.2s ease;
+        }
+
+        .sidebar-nav a:hover {
+            border: 1px solid var(--primary-color);
+            transform: translateX(3px);
+        }
+
+        .main {
+            min-width: 0;
         }
 
         .container {
             width: 100%;
             max-width: 1200px;
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
             gap: 1.5rem;
         }
 
@@ -56,7 +261,7 @@
 
         .chart-container {
             position: relative;
-            height: 50vh;
+            height: 55vh;
             grid-column: 1 / -1;
         }
 
@@ -90,7 +295,7 @@
         }
 
         .data-box h3 { margin: 0 0 0.5rem 0; font-weight: 300; font-size: 1rem; text-transform: uppercase; }
-        .data-box p { margin: 0; font-size: 2.5rem; font-weight: 700; }
+        .data-box p { margin: 0; font-size: 2.25rem; font-weight: 700; }
         #currentThrust { color: var(--accent-color); }
         #currentPwm { color: var(--pwm-color); }
 
@@ -168,85 +373,237 @@
         .scale-factor-group button:hover {
             background: #b92d3a;
         }
+
+        .config-btn {
+            padding: 0.5rem 1rem;
+            font-size: 1rem;
+            border-radius: 8px;
+            border: none;
+            background: var(--primary-color);
+            color: white;
+            cursor: pointer;
+            margin-right: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .config-btn:hover { opacity: 0.9; }
+        .board-config-editor {
+            width: 100%;
+            min-height: 320px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.4;
+            padding: 0.75rem;
+            border: 1px solid var(--primary-color);
+            border-radius: 8px;
+            background: var(--bg-color);
+            color: var(--text-color);
+            resize: vertical;
+        }
+
+        .settings-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 1100;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+        }
+
+        .settings-panel {
+            width: min(920px, 96vw);
+            max-height: 90vh;
+            overflow-y: auto;
+            background: #16213e;
+            border-radius: 16px;
+            padding: 1.5rem;
+            border: 1px solid rgba(233, 69, 96, 0.35);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+        }
+
+        .settings-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .settings-header h2 {
+            margin: 0;
+            color: var(--accent-color);
+        }
+
+        .settings-close {
+            padding: 0.4rem 0.75rem;
+            border-radius: 8px;
+            border: 1px solid rgba(233, 69, 96, 0.5);
+            background: rgba(233, 69, 96, 0.15);
+            color: #f6c1cb;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        @media (max-width: 980px) {
+            .app {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: static;
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+                align-items: start;
+            }
+
+            .topbar {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .app {
+                padding: 0.75rem;
+            }
+
+            .chart-container {
+                height: 45vh;
+            }
+        }
     </style>
 </head>
 <body>
-
-    <div class="container">
-        <div class="card chart-container" id="chartCard">
-            <canvas id="thrustChart"></canvas>
-            <div id="liveTimer" class="live-timer">0.00s</div>
-        </div>
-
-        <div class="card">
-            <h2 class="card-title">Live Data</h2>
-            <div class="live-data live-data-grid">
-                <div class="data-box">
-                    <h3>Thrust (g)</h3>
-                    <p id="currentThrust">0.00</p>
-                </div>
-                <div class="data-box">
-                    <h3>PWM (μs)</h3>
-                    <p id="currentPwm">1000</p>
-                </div>
-                <div class="data-box">
-                    <h3>Voltage (V)</h3>
-                    <p id="currentVoltage">--</p>
-                </div>
-                <div class="data-box">
-                    <h3>Current (A)</h3>
-                    <p id="currentCurrent">--</p>
+    <div class="app">
+        <header class="topbar">
+            <div class="brand">
+                <div class="brand-mark">TS</div>
+                <div>
+                    <p class="brand-title">ESP32 Thrust Stand</p>
+                    <p class="brand-subtitle">Realtime thrust + telemetry</p>
                 </div>
             </div>
-        </div>
+            <div class="topbar-actions">
+                <div class="status-pill" id="wsStatus" data-state="disconnected">
+                    <span class="status-dot"></span>
+                    <span id="wsText">Disconnected</span>
+                </div>
+                <div class="sim-toggle" title="Requires reboot to apply">
+                    <span>Live</span>
+                    <label class="switch">
+                        <input type="checkbox" id="simToggle">
+                        <span class="slider"></span>
+                    </label>
+                    <span>Sim</span>
+                </div>
+                <button class="topbar-btn" id="settingsOpenBtn" type="button">Settings</button>
+            </div>
+        </header>
 
-        <div class="card">
-            <h2 class="card-title">Controls</h2>
-            <div class="controls">
-                <button id="startBtn">START TEST</button>
-                <button id="stopBtn">STOP TEST</button>
-                <button id="resetBtn">RESET</button>
+        <aside class="sidebar">
+            <div class="card">
+                <h2 class="card-title">Quick Controls</h2>
+                <div class="controls">
+                    <button id="startBtn">START TEST</button>
+                    <button id="stopBtn">STOP TEST</button>
+                    <button id="resetBtn">RESET</button>
+                </div>
             </div>
-        </div>
 
-        <div class="card">
-            <h2 class="card-title">Test Information</h2>
-            <div class="form-group">
-                <label for="testName">Test Name</label>
-                <input type="text" id="testName">
+            <div class="card">
+                <h2 class="card-title">Live Data</h2>
+                <div class="live-data live-data-grid">
+                    <div class="data-box">
+                        <h3>Thrust (g)</h3>
+                        <p id="currentThrust">0.00</p>
+                    </div>
+                    <div class="data-box">
+                        <h3>PWM (μs)</h3>
+                        <p id="currentPwm">1000</p>
+                    </div>
+                    <div class="data-box">
+                        <h3>Voltage (V)</h3>
+                        <p id="currentVoltage">--</p>
+                    </div>
+                    <div class="data-box">
+                        <h3>Current (A)</h3>
+                        <p id="currentCurrent">--</p>
+                    </div>
+                </div>
             </div>
-            <div class="form-group">
-                <label for="testDetails">Test Details & Profile</label>
-                <textarea id="testDetails"></textarea>
-                <p class="help-text">Tip: Capture motor, prop, battery, and Test Profile line.</p>
-            </div>
-        </div>
-        
-        <div class="card" id="summaryCard" style="display: none;">
-            <h2 class="card-title">Test Summary</h2>
-            <div id="summaryStats">
-                <p><strong>Max Thrust:</strong> <span id="summaryMaxThrust">0</span> g</p>
-                <p><strong>Max PWM:</strong> <span id="summaryMaxPwm">0</span> µs</p>
-                <p><strong>Time near Max Thrust (-50g):</strong> <span id="summaryTimeAtMax">0</span> s</p>
-                <p><strong>Total Test Duration:</strong> <span id="summaryTotalTime">0</span> s</p>
-            </div>
-            <div class="export-controls" style="margin-top: 1rem;">
-                <button id="exportBtn" disabled>Export CSV Results</button>
-            </div>
-        </div>
 
-        <div class="card" style="grid-column: 1 / -1;">
-            <h2 class="card-title">Status Log</h2>
-            <div id="statusLog"></div>
-        </div>
-
-        <!-- Settings Tab/Card -->
-        <div class="card" id="settingsCard" style="grid-column: 1 / -1;">
-            <h2 class="card-title">Settings</h2>
-            <div style="margin-bottom:1rem;">
-                <button id="calibrateBtn" style="width:100%;padding:1rem;font-size:1.2rem;font-weight:700;background:#17a2b8;color:white;border:none;border-radius:10px;cursor:pointer;">Calibrate Weight</button>
+            <div class="card" id="summaryCard" style="display: none;">
+                <h2 class="card-title">Test Summary</h2>
+                <div id="summaryStats">
+                    <p><strong>Max Thrust:</strong> <span id="summaryMaxThrust">0</span> g</p>
+                    <p><strong>Max PWM:</strong> <span id="summaryMaxPwm">0</span> µs</p>
+                    <p><strong>Time near Max Thrust (-50g):</strong> <span id="summaryTimeAtMax">0</span> s</p>
+                    <p><strong>Total Test Duration:</strong> <span id="summaryTotalTime">0</span> s</p>
+                </div>
+                <div class="export-controls" style="margin-top: 1rem;">
+                    <button id="exportBtn" disabled>Export CSV Results</button>
+                </div>
             </div>
-            <div id="calibrationStatus" style="font-size:1rem;color:#aaa;"></div>
+
+        </aside>
+
+        <main class="main">
+            <div class="container">
+                <div class="card chart-container" id="chartCard">
+                    <canvas id="thrustChart"></canvas>
+                    <div id="liveTimer" class="live-timer">0.00s</div>
+                </div>
+
+                <div class="card" id="statusLogCard" style="grid-column: 1 / -1;">
+                    <h2 class="card-title">Status Log</h2>
+                    <div id="statusLog"></div>
+                </div>
+
+                <div class="card">
+                    <h2 class="card-title">Test Information</h2>
+                    <div class="form-group">
+                        <label for="testName">Test Name</label>
+                        <input type="text" id="testName">
+                    </div>
+                    <div class="form-group">
+                        <label for="testDetails">Test Details & Profile</label>
+                        <textarea id="testDetails"></textarea>
+                        <p class="help-text">Tip: Capture motor, prop, battery, and Test Profile line.</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="settingsModal" class="settings-modal">
+        <div class="settings-panel">
+            <div class="settings-header">
+                <h2>Settings</h2>
+                <button class="settings-close" id="settingsCloseBtn" type="button">Close</button>
+            </div>
+
+            <div class="card" style="margin-bottom:1rem;">
+                <h2 class="card-title">Calibration</h2>
+                <div style="margin-bottom:1rem;">
+                    <button id="calibrateBtn" style="width:100%;padding:1rem;font-size:1.2rem;font-weight:700;background:#17a2b8;color:white;border:none;border-radius:10px;cursor:pointer;">Calibrate Weight</button>
+                </div>
+                <div id="calibrationStatus" style="font-size:1rem;color:#aaa;"></div>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">Board configuration</h2>
+                <p class="help-text" style="margin-bottom:1rem;">Config is stored on the board and is not deleted. Changes to pins and ESC require a reboot to apply.</p>
+                <div style="margin-bottom:0.5rem;">
+                    <button type="button" id="configLoadBtn" class="config-btn">Load from board</button>
+                    <button type="button" id="configDefaultBtn" class="config-btn">Load default</button>
+                    <button type="button" id="configValidateBtn" class="config-btn">Validate</button>
+                    <button type="button" id="configSaveBtn" class="config-btn" style="background:var(--accent-color);">Save to board</button>
+                    <button type="button" id="configRebootBtn" class="config-btn">Reboot to apply</button>
+                </div>
+                <textarea id="boardConfigEditor" class="board-config-editor" spellcheck="false" placeholder="Load from board to edit..."></textarea>
+                <div id="configStatus" style="margin-top:0.5rem;font-size:0.9rem;color:#aaa;"></div>
+            </div>
         </div>
     </div>
 
@@ -274,13 +631,26 @@
     </div>
 
     <script>
-        let gateway = `ws://${window.location.hostname}/ws`;
+        const urlParams = new URLSearchParams(window.location.search);
+        const authToken = urlParams.get('token') || '';
+        const authQuery = authToken ? `?token=${encodeURIComponent(authToken)}` : '';
+        const authUrl = (path) => authToken ? `${path}${path.includes('?') ? '&' : '?'}token=${encodeURIComponent(authToken)}` : path;
+        const authHeaders = (extra = {}) => {
+            if (!authToken) return extra;
+            return Object.assign({ 'X-Auth-Token': authToken }, extra);
+        };
+
+        let gateway = `ws://${window.location.hostname}/ws${authQuery}`;
         let websocket;
+        let heartbeatTimer = null;
         let thrustChart;
         let finalTestResults = [];
+        let finalResultsReceiving = false;
+        let expectedFinalTotal = 0;
         let currentScaleFactor = -204.0; // Default
         let currentRawReading = 0;
         let currentMeasuredWeight = 0;
+        let plannedMaxSeconds = null;
 
         // DOM Elements
         const currentThrustEl = document.getElementById('currentThrust');
@@ -296,6 +666,12 @@
         const testDetailsInput = document.getElementById('testDetails');
         const liveTimerEl = document.getElementById('liveTimer');
         const summaryCardEl = document.getElementById('summaryCard');
+        const wsStatusEl = document.getElementById('wsStatus');
+        const wsTextEl = document.getElementById('wsText');
+        const simToggleEl = document.getElementById('simToggle');
+        const settingsOpenBtn = document.getElementById('settingsOpenBtn');
+        const settingsCloseBtn = document.getElementById('settingsCloseBtn');
+        const settingsModal = document.getElementById('settingsModal');
 
         // Calibration modal DOM
         const calibrateBtn = document.getElementById('calibrateBtn');
@@ -306,6 +682,14 @@
         const modalCaptureBtn = document.getElementById('modalCaptureBtn');
         const modalCancelBtn = document.getElementById('modalCancelBtn');
         const modalCalibMsg = document.getElementById('modalCalibMsg');
+
+        const configLoadBtn = document.getElementById('configLoadBtn');
+        const configDefaultBtn = document.getElementById('configDefaultBtn');
+        const configValidateBtn = document.getElementById('configValidateBtn');
+        const configSaveBtn = document.getElementById('configSaveBtn');
+        const configRebootBtn = document.getElementById('configRebootBtn');
+        const boardConfigEditor = document.getElementById('boardConfigEditor');
+        const configStatus = document.getElementById('configStatus');
 
         let calibrationLiveInterval = null;
         let lastCalibrationRaw = null;
@@ -332,6 +716,8 @@
             initWebSocket();
             initChart();
             initButtons();
+            initBoardConfig();
+            initSimToggle();
             requestScaleFactor();
         }
 
@@ -339,13 +725,99 @@
             websocket = new WebSocket(gateway);
             websocket.onopen = () => {
                 logStatus('Connected to ESP32.');
+                setWsStatus('connected');
                 requestScaleFactor();
+                if (heartbeatTimer) clearInterval(heartbeatTimer);
+                heartbeatTimer = setInterval(() => {
+                    if (websocket.readyState === WebSocket.OPEN) {
+                        sendCommand({ command: 'ping' });
+                    }
+                }, 5000);
             };
             websocket.onclose = () => {
                 logStatus('Connection lost. Retrying...', 'error');
+                setWsStatus('disconnected');
+                if (heartbeatTimer) {
+                    clearInterval(heartbeatTimer);
+                    heartbeatTimer = null;
+                }
                 setTimeout(initWebSocket, 2000);
             };
             websocket.onmessage = onMessage;
+        }
+
+        function setWsStatus(state) {
+            if (!wsStatusEl || !wsTextEl) return;
+            wsStatusEl.dataset.state = state;
+            wsTextEl.textContent = state === 'connected' ? 'Connected' : 'Disconnected';
+        }
+
+        async function fetchBoardConfigText() {
+            const r = await fetch(authUrl('/api/config'), { headers: authHeaders() });
+            if (!r.ok) {
+                throw new Error('Failed to fetch config');
+            }
+            return await r.text();
+        }
+
+        function parseSimEnabledFromConfig(text) {
+            const match = text.match(/^\s*SIM_ENABLED\s*=\s*(\d+)/m);
+            if (!match) return false;
+            return parseInt(match[1], 10) !== 0;
+        }
+
+        function updateSimEnabledInConfig(text, enabled) {
+            const value = enabled ? '1' : '0';
+            if (/^\s*SIM_ENABLED\s*=\s*\d+/m.test(text)) {
+                return text.replace(/^\s*SIM_ENABLED\s*=\s*\d+/m, `SIM_ENABLED = ${value}`);
+            }
+            if (/^\s*\[sim\]\s*$/m.test(text)) {
+                return text.replace(/^\s*\[sim\]\s*$/m, match => `${match}\nSIM_ENABLED = ${value}`);
+            }
+            return `${text.trimEnd()}\n\n[sim]\nSIM_ENABLED = ${value}\n`;
+        }
+
+        async function refreshSimToggle() {
+            if (!simToggleEl) return;
+            try {
+                const text = await fetchBoardConfigText();
+                const enabled = parseSimEnabledFromConfig(text);
+                simToggleEl.checked = enabled;
+            } catch (e) {
+                logStatus('Failed to read sim mode.', 'error');
+            }
+        }
+
+        function initSimToggle() {
+            if (!simToggleEl) return;
+            refreshSimToggle();
+            simToggleEl.addEventListener('change', async function() {
+                const desired = simToggleEl.checked;
+                simToggleEl.disabled = true;
+                try {
+                    const text = await fetchBoardConfigText();
+                    const current = parseSimEnabledFromConfig(text);
+                    if (current === desired) {
+                        simToggleEl.disabled = false;
+                        return;
+                    }
+                    const updated = updateSimEnabledInConfig(text, desired);
+                    const r = await fetch(authUrl('/api/config'), {
+                        method: 'POST',
+                        headers: authHeaders({ 'Content-Type': 'text/plain' }),
+                        body: updated
+                    });
+                    if (!r.ok) {
+                        throw new Error('Failed to save config');
+                    }
+                    logStatus(`Simulation ${desired ? 'enabled' : 'disabled'} (reboot to apply).`);
+                } catch (e) {
+                    logStatus('Failed to update simulation mode.', 'error');
+                    simToggleEl.checked = !desired;
+                } finally {
+                    simToggleEl.disabled = false;
+                }
+            });
         }
 
         function requestScaleFactor() {
@@ -376,18 +848,41 @@
                     exportBtn.disabled = true;
                     stopChartLive();
                     break;
-                case 'final_results':
+                case 'final_results_start':
+                    finalResultsReceiving = true;
+                    expectedFinalTotal = data.total || 0;
+                    finalTestResults = [];
+                    exportBtn.disabled = true;
+                    logStatus(`Receiving final results (${expectedFinalTotal} points)...`);
+                    break;
+                case 'final_results_chunk':
+                    if (Array.isArray(data.data)) {
+                        finalTestResults = finalTestResults.concat(data.data);
+                    }
+                    break;
+                case 'final_results_end':
+                    finalResultsReceiving = false;
                     logStatus('Final results received. Calculating stats...');
-                    finalTestResults = data.data;
-                    exportBtn.disabled = false;
-                    // Always use backend data for chart after run
-                    plotFinalResults(data.data);
-                    calculateAndDisplayStats(data.data);
-                    if (data.data && data.data.length > 0) {
-                        testTotalTime = data.data[data.data.length - 1].time / 1000;
+                    exportBtn.disabled = finalTestResults.length === 0;
+                    plotFinalResults(finalTestResults);
+                    calculateAndDisplayStats(finalTestResults);
+                    if (finalTestResults.length > 0) {
+                        testTotalTime = finalTestResults[finalTestResults.length - 1].time / 1000;
                         liveTimerEl.textContent = testTotalTime.toFixed(2) + 's';
                     }
-                    // Prevent further live chart updates after final_results
+                    testRunning = false;
+                    break;
+                case 'final_results':
+                    // Backward-compatible handler
+                    logStatus('Final results received. Calculating stats...');
+                    finalTestResults = data.data || [];
+                    exportBtn.disabled = finalTestResults.length === 0;
+                    plotFinalResults(finalTestResults);
+                    calculateAndDisplayStats(finalTestResults);
+                    if (finalTestResults.length > 0) {
+                        testTotalTime = finalTestResults[finalTestResults.length - 1].time / 1000;
+                        liveTimerEl.textContent = testTotalTime.toFixed(2) + 's';
+                    }
                     testRunning = false;
                     break;
                 case 'scale_factor':
@@ -395,6 +890,8 @@
                     break;
                 case 'raw_reading':
                     updateRawReadingUI(data.raw, data.weight, data.factor);
+                    break;
+                case 'pong':
                     break;
             }
         }
@@ -405,7 +902,6 @@
             testTotalTime = 0;
             // Always clear chart for a new run
             if (thrustChart) {
-                thrustChart.data.labels = [];
                 thrustChart.data.datasets[0].data = [];
                 thrustChart.data.datasets[1].data = [];
                 thrustChart.update();
@@ -439,12 +935,16 @@
         function initButtons() {
             startBtn.onclick = () => {
                 const details = testDetailsInput.value;
-                const sequenceMatch = details.match(/Test Profile:\s*(.*)/i);
-                const sequence = sequenceMatch ? sequenceMatch[1].trim() : '';
+                const sequence = extractSequence(details);
 
                 if (sequence) {
+                    const plannedSeconds = computePlannedSeconds(sequence);
                     resetUI();
-                    logStatus('Sending sequence to ESP32...');
+                    setPlannedTimeScale(plannedSeconds);
+                    if (plannedSeconds) {
+                        logStatus(`Planned time scale: ${plannedSeconds}s.`);
+                    }
+                    logStatus(`Sending sequence to ESP32: ${sequence}`);
                     sendCommand({ command: 'start_test', sequence: sequence });
                 } else {
                     alert('Could not find a "Test Profile:" line in the details box.');
@@ -504,6 +1004,124 @@
                     modalMeasuredWeight.textContent = measured.toFixed(2);
                 }
             });
+
+            if (settingsOpenBtn && settingsModal) {
+                settingsOpenBtn.addEventListener('click', function() {
+                    settingsModal.style.display = 'flex';
+                });
+            }
+            if (settingsCloseBtn && settingsModal) {
+                settingsCloseBtn.addEventListener('click', function() {
+                    settingsModal.style.display = 'none';
+                });
+            }
+            if (settingsModal) {
+                settingsModal.addEventListener('click', function(e) {
+                    if (e.target === settingsModal) {
+                        settingsModal.style.display = 'none';
+                    }
+                });
+            }
+        }
+
+        function initBoardConfig() {
+            function setConfigStatus(msg, isError) {
+                configStatus.textContent = msg;
+                configStatus.style.color = isError ? '#ff6b6b' : '#aaa';
+            }
+            configLoadBtn.addEventListener('click', async function() {
+                setConfigStatus('Loading...');
+                try {
+                    const r = await fetch(authUrl('/api/config'), { headers: authHeaders() });
+                    if (!r.ok) {
+                        setConfigStatus('Failed to load config.', true);
+                        return;
+                    }
+                    const text = await r.text();
+                    boardConfigEditor.value = text;
+                    setConfigStatus('Loaded from board.');
+                } catch (e) {
+                    setConfigStatus('Request failed.', true);
+                }
+            });
+            configDefaultBtn.addEventListener('click', async function() {
+                setConfigStatus('Loading default...');
+                try {
+                    const r = await fetch(authUrl('/api/config/default'), { headers: authHeaders() });
+                    if (!r.ok) {
+                        setConfigStatus('Failed to load default.', true);
+                        return;
+                    }
+                    const text = await r.text();
+                    boardConfigEditor.value = text;
+                    setConfigStatus('Default config loaded. Save to board to apply.');
+                } catch (e) {
+                    setConfigStatus('Request failed.', true);
+                }
+            });
+            configSaveBtn.addEventListener('click', async function() {
+                const content = boardConfigEditor.value;
+                if (!content.trim()) {
+                    setConfigStatus('Editor is empty.', true);
+                    return;
+                }
+                setConfigStatus('Saving...');
+                try {
+                    const r = await fetch(authUrl('/api/config'), {
+                        method: 'POST',
+                        headers: authHeaders({ 'Content-Type': 'text/plain' }),
+                        body: content
+                    });
+                    const data = r.ok ? {} : await r.json().catch(() => ({}));
+                    if (r.ok) {
+                        setConfigStatus('Saved. Reboot the board to apply pin/ESC changes.');
+                    } else {
+                        setConfigStatus(data.error || 'Save failed.', true);
+                    }
+                } catch (e) {
+                    setConfigStatus('Request failed.', true);
+                }
+            });
+
+            configValidateBtn.addEventListener('click', async function() {
+                const content = boardConfigEditor.value;
+                if (!content.trim()) {
+                    setConfigStatus('Editor is empty.', true);
+                    return;
+                }
+                setConfigStatus('Validating...');
+                try {
+                    const r = await fetch(authUrl('/api/config/validate'), {
+                        method: 'POST',
+                        headers: authHeaders({ 'Content-Type': 'text/plain' }),
+                        body: content
+                    });
+                    const data = r.ok ? {} : await r.json().catch(() => ({}));
+                    if (r.ok) {
+                        setConfigStatus('Config valid.');
+                    } else {
+                        setConfigStatus(data.error || 'Validation failed.', true);
+                    }
+                } catch (e) {
+                    setConfigStatus('Request failed.', true);
+                }
+            });
+
+            configRebootBtn.addEventListener('click', async function() {
+                setConfigStatus('Rebooting...');
+                try {
+                    const r = await fetch(authUrl('/api/reboot'), {
+                        method: 'POST',
+                        headers: authHeaders()
+                    });
+                    if (!r.ok) {
+                        const data = await r.json().catch(() => ({}));
+                        setConfigStatus(data.error || 'Reboot failed.', true);
+                    }
+                } catch (e) {
+                    setConfigStatus('Request failed.', true);
+                }
+            });
         }
 
         function startCalibrationLive() {
@@ -531,6 +1149,7 @@
 
         function sendCommand(cmdObject) {
             if (websocket.readyState === WebSocket.OPEN) {
+                if (authToken) cmdObject.token = authToken;
                 websocket.send(JSON.stringify(cmdObject));
             } else {
                 logStatus('WebSocket is not connected.', 'error');
@@ -541,15 +1160,15 @@
             const p = document.createElement('p');
             p.innerHTML = `&gt; ${message}`;
             if (type === 'error') p.className = 'error-log';
-            statusLogEl.appendChild(p);
-            statusLogEl.scrollTop = statusLogEl.scrollHeight;
+            statusLogEl.prepend(p);
+            statusLogEl.scrollTop = 0;
         }
 
         function resetUI() {
             if (thrustChart) {
-                thrustChart.data.labels = [];
                 thrustChart.data.datasets[0].data = [];
                 thrustChart.data.datasets[1].data = [];
+                setPlannedTimeScale(null);
                 thrustChart.update();
             }
             currentThrustEl.textContent = "0.00";
@@ -563,6 +1182,60 @@
             testTotalTime = 0;
             logStatus("UI Reset.");
             stopChartLive();
+        }
+
+        function computePlannedSeconds(sequence) {
+            if (!sequence) return null;
+            const steps = sequence.split(';').map(s => s.trim()).filter(Boolean);
+            let total = 0;
+            for (const step of steps) {
+                const match = step.match(/(\d+)\s*-\s*(\d+)\s*-\s*(\d+)/);
+                if (!match) return null;
+                const spinup = parseInt(match[2], 10);
+                const stable = parseInt(match[3], 10);
+                if (isNaN(spinup) || isNaN(stable)) return null;
+                total += spinup + stable;
+            }
+            return total > 0 ? total : null;
+        }
+
+        function setPlannedTimeScale(seconds) {
+            plannedMaxSeconds = seconds;
+            if (!thrustChart) return;
+            if (seconds && seconds > 0) {
+                thrustChart.options.scales.x.min = 0;
+                thrustChart.options.scales.x.max = seconds;
+            } else {
+                delete thrustChart.options.scales.x.min;
+                delete thrustChart.options.scales.x.max;
+            }
+        }
+
+        function extractSequence(details) {
+            if (!details) return '';
+            const lines = details.split(/\r?\n/);
+            let sequence = '';
+            for (let i = 0; i < lines.length; i++) {
+                if (/^\s*Test Profile:/i.test(lines[i])) {
+                    sequence = lines[i].replace(/^\s*Test Profile:\s*/i, '').trim();
+                    for (let j = i + 1; j < lines.length; j++) {
+                        const line = lines[j].trim();
+                        if (line === '') break;
+                        if (/\d+\s*-\s*\d+\s*-\s*\d+/.test(line)) {
+                            if (sequence && !sequence.trim().endsWith(';')) sequence += '; ';
+                            sequence += line;
+                        } else if (sequence) {
+                            sequence += ' ' + line;
+                        }
+                    }
+                    break;
+                }
+            }
+            if (!sequence) {
+                const matches = details.match(/\d+\s*-\s*\d+\s*-\s*\d+/g);
+                if (matches) sequence = matches.join('; ');
+            }
+            return sequence.trim();
         }
 
         function initChart() {
@@ -580,7 +1253,7 @@
                 options: {
                     responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
                     scales: {
-                        x: { title: { display: true, text: 'Time (s)', color: 'white' }, ticks: { color: 'white' } },
+                        x: { type: 'linear', title: { display: true, text: 'Time (s)', color: 'white' }, ticks: { color: 'white' } },
                         y: { 
                             type: 'linear', 
                             display: true, 
@@ -621,11 +1294,14 @@
             let voltage = (typeof data.voltage === "number") ? data.voltage : parseFloat(data.voltage);
             let current = (typeof data.current === "number") ? data.current : parseFloat(data.current);
 
-            // Fallback to last value if still NaN
+            const voltageValid = !isNaN(voltage);
+            const currentValid = !isNaN(current);
+
+            // Fallback to last value if still NaN (thrust/pwm only)
             thrust = (!isNaN(thrust)) ? thrust : lastThrust;
             pwm = (!isNaN(pwm)) ? pwm : lastPwm;
-            voltage = (!isNaN(voltage)) ? voltage : lastVoltage;
-            current = (!isNaN(current)) ? current : lastCurrent;
+            if (voltageValid) lastVoltage = voltage;
+            if (currentValid) lastCurrent = current;
 
             // Clamp to reasonable values to avoid wild jumps
             if (Math.abs(thrust - lastThrust) > 1000) thrust = lastThrust;
@@ -634,13 +1310,21 @@
 
             currentThrustEl.textContent = thrust.toFixed(2);
             currentPwmEl.textContent = pwm;
-            currentVoltageEl.textContent = voltage.toFixed(2);
-            currentCurrentEl.textContent = current.toFixed(2);
+            if (voltageValid) {
+                currentVoltageEl.textContent = voltage.toFixed(2);
+            } else {
+                currentVoltageEl.textContent = testRunning ? '--' : 'N/A';
+            }
+            if (currentValid) {
+                currentCurrentEl.textContent = current.toFixed(2);
+            } else {
+                currentCurrentEl.textContent = testRunning ? '--' : 'N/A';
+            }
 
             lastThrust = thrust;
             lastPwm = pwm;
-            lastVoltage = voltage;
-            lastCurrent = current;
+            if (voltageValid) lastVoltage = voltage;
+            if (currentValid) lastCurrent = current;
 
             // Timer logic: use the relative time from the server directly
             if (testRunning) {
@@ -655,14 +1339,17 @@
             // Only update chart if test is running
             if (testRunning && thrustChart) {
                 // data.time is already the correct relative time in ms. Use it directly.
-                let chartTime = (data.time / 1000).toFixed(2);
-                thrustChart.data.labels.push(chartTime);
-                thrustChart.data.datasets[0].data.push(lastPwm);    // PWM (left)
-                thrustChart.data.datasets[1].data.push(lastThrust); // Thrust (right)
+                let chartTime = data.time / 1000;
+                thrustChart.data.datasets[0].data.push({ x: chartTime, y: lastPwm });    // PWM (left)
+                thrustChart.data.datasets[1].data.push({ x: chartTime, y: lastThrust }); // Thrust (right)
 
-                const maxPoints = 200;
-                if (thrustChart.data.labels.length > maxPoints) {
-                    thrustChart.data.labels.shift();
+                if (plannedMaxSeconds && chartTime > plannedMaxSeconds) {
+                    plannedMaxSeconds = chartTime;
+                    thrustChart.options.scales.x.max = plannedMaxSeconds;
+                }
+
+                const maxPoints = 8000;
+                if (thrustChart.data.datasets[0].data.length > maxPoints) {
                     thrustChart.data.datasets[0].data.shift();
                     thrustChart.data.datasets[1].data.shift();
                 }
@@ -672,9 +1359,9 @@
 
         function plotFinalResults(results) {
             if (!results || results.length === 0) return;
-            const labels = [];
             const pwmData = [];
             const thrustData = [];
+            let maxTime = 0;
 
             let lastThrustVal = 0.00;
             let lastPwmVal = 1000;
@@ -687,17 +1374,20 @@
                 if (Math.abs(t - lastThrustVal) > 1000) t = lastThrustVal;
                 if (Math.abs(pwm - lastPwmVal) > 1000) pwm = lastPwmVal;
 
-                labels.push((p.time / 1000).toFixed(2));
-                pwmData.push(pwm);
-                thrustData.push(t);
+                const timeSec = p.time / 1000;
+                pwmData.push({ x: timeSec, y: pwm });
+                thrustData.push({ x: timeSec, y: t });
+                if (timeSec > maxTime) maxTime = timeSec;
 
                 lastThrustVal = t;
                 lastPwmVal = pwm;
             }
 
-            thrustChart.data.labels = labels;
             thrustChart.data.datasets[0].data = pwmData;
             thrustChart.data.datasets[1].data = thrustData;
+            if (maxTime > 0) {
+                setPlannedTimeScale(maxTime);
+            }
             thrustChart.update();
         }
 
