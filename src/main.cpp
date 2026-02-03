@@ -659,7 +659,11 @@ void setEscThrottlePwm(int pulse_width_us) {
   currentPwm = pulse_width_us;
 
   if (!simEnabled()) {
-    uint32_t duty = (65535UL * (uint32_t)pulse_width_us) / 20000;
+    const uint32_t maxDuty = (1UL << boardConfig.pwm_resolution) - 1UL;
+    const uint32_t periodUs = (boardConfig.pwm_freq > 0)
+                                  ? (1000000UL / (uint32_t)boardConfig.pwm_freq)
+                                  : 20000UL;
+    uint32_t duty = (maxDuty * (uint32_t)pulse_width_us) / periodUs;
     ledcWrite(boardConfig.esc_pwm_channel, duty);
   }
 }
@@ -679,11 +683,34 @@ void triggerSafetyShutdown(const char *reason) {
 }
 
 static const size_t FINAL_RESULTS_CHUNK_SIZE = 100;
+static const char LAST_RESULTS_PATH[] = "/last_test.csv";
+
+static void deleteLastResultsFile() {
+  if (LittleFS.exists(LAST_RESULTS_PATH)) {
+    LittleFS.remove(LAST_RESULTS_PATH);
+  }
+}
+
+static void saveResultsCsv(const std::vector<DataPoint> &results) {
+  File file = LittleFS.open(LAST_RESULTS_PATH, "w");
+  if (!file) {
+    logWarn("Failed to open %s for writing", LAST_RESULTS_PATH);
+    return;
+  }
+  file.println("timestamp_ms,thrust_g,pwm_us");
+  for (const auto &point : results) {
+    file.printf("%lu,%.3f,%d\n", point.timestamp, point.thrust, point.pwm);
+  }
+  file.close();
+  logInfo("Saved %u results to %s", (unsigned)results.size(), LAST_RESULTS_PATH);
+}
 
 void finishTest() {
   setEscThrottlePwm(boardConfig.min_pulse_width);
   currentState = TEST_FINISHED;
   Serial.println("Test sequence finished.");
+
+  saveResultsCsv(testResults);
 
   StaticJsonDocument<200> doc;
   doc["type"] = "status";
@@ -828,6 +855,7 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
           const char *sequence = doc["sequence"];
           Serial.printf("Received test sequence: %s\n", sequence);
           if (parseAndStoreSequence(sequence)) {
+            deleteLastResultsFile();
             Serial.println(
                 "Sequence parsed successfully. Starting pre-test tare.");
             currentState = PRE_TEST_TARE;
@@ -845,6 +873,9 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
         currentState = IDLE;
         testResults.clear();
         testSequence.clear();
+        deleteLastResultsFile();
+        lastThrustForSafetyCheck = 0.0f;
+        lastSafetyCheckTime = 0;
         lastSimSampleMs = 0;
         lastSimUpdateMs = 0;
         notifyClients("{\"type\":\"status\", \"message\":\"System reset.\"}");
@@ -1109,6 +1140,18 @@ void setup() {
     request->send(200, "text/plain", content);
   });
 
+  server.on("/api/results/latest", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!isAuthorizedRequest(request)) {
+      request->send(401, "text/plain", "Unauthorized");
+      return;
+    }
+    if (!LittleFS.exists(LAST_RESULTS_PATH)) {
+      request->send(404, "text/plain", "No saved results");
+      return;
+    }
+    request->send(LittleFS, LAST_RESULTS_PATH, "text/csv");
+  });
+
   server.on("/api/config/default", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!isAuthorizedRequest(request)) {
       request->send(401, "text/plain", "Unauthorized");
@@ -1341,6 +1384,8 @@ void loop() {
         previousPwmForRamp = boardConfig.min_pulse_width;
         testResults.clear();
         testResultsFullLogged = false;
+        lastThrustForSafetyCheck = 0.0f;
+        lastSafetyCheckTime = 0;
         lastSimSampleMs = 0;
         lastSimUpdateMs = 0;
         preTestSettling = false;

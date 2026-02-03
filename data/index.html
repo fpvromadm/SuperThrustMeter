@@ -87,6 +87,34 @@
             gap: 0.75rem;
         }
 
+        .test-name-display {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            padding: 0.4rem 0.75rem;
+            border-radius: 12px;
+            background: rgba(15, 52, 96, 0.45);
+            border: 1px solid rgba(233, 69, 96, 0.25);
+            min-width: 180px;
+        }
+
+        .test-name-label {
+            font-size: 0.7rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #b9c2d6;
+        }
+
+        .test-name-value {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #f5f7ff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 320px;
+        }
+
         .sim-toggle {
             display: flex;
             align-items: center;
@@ -484,6 +512,10 @@
                     <p class="brand-subtitle">Realtime thrust + telemetry</p>
                 </div>
             </div>
+            <div class="test-name-display" aria-live="polite">
+                <span class="test-name-label">Test Name</span>
+                <span class="test-name-value" id="testNameDisplay">--</span>
+            </div>
             <div class="topbar-actions">
                 <div class="status-pill" id="wsStatus" data-state="disconnected">
                     <span class="status-dot"></span>
@@ -497,6 +529,7 @@
                     </label>
                     <span>Sim</span>
                 </div>
+                <button class="topbar-btn" id="topbarRebootBtn" type="button">Reboot</button>
                 <button class="topbar-btn" id="settingsOpenBtn" type="button">Settings</button>
             </div>
         </header>
@@ -560,18 +593,6 @@
                     <div id="statusLog"></div>
                 </div>
 
-                <div class="card">
-                    <h2 class="card-title">Test Information</h2>
-                    <div class="form-group">
-                        <label for="testName">Test Name</label>
-                        <input type="text" id="testName">
-                    </div>
-                    <div class="form-group">
-                        <label for="testDetails">Test Details & Profile</label>
-                        <textarea id="testDetails"></textarea>
-                        <p class="help-text">Tip: Capture motor, prop, battery, and Test Profile line.</p>
-                    </div>
-                </div>
             </div>
         </main>
     </div>
@@ -581,6 +602,19 @@
             <div class="settings-header">
                 <h2>Settings</h2>
                 <button class="settings-close" id="settingsCloseBtn" type="button">Close</button>
+            </div>
+
+            <div class="card" style="margin-bottom:1rem;">
+                <h2 class="card-title">Test Information</h2>
+                <div class="form-group">
+                    <label for="testName">Test Name</label>
+                    <input type="text" id="testName">
+                </div>
+                <div class="form-group">
+                    <label for="testDetails">Test Details & Profile</label>
+                    <textarea id="testDetails"></textarea>
+                    <p class="help-text">Tip: Capture motor, prop, battery, and Test Profile line.</p>
+                </div>
             </div>
 
             <div class="card" style="margin-bottom:1rem;">
@@ -645,6 +679,7 @@
         let heartbeatTimer = null;
         let thrustChart;
         let finalTestResults = [];
+        let resultsSaved = true;
         let finalResultsReceiving = false;
         let expectedFinalTotal = 0;
         let currentScaleFactor = -204.0; // Default
@@ -669,9 +704,11 @@
         const wsStatusEl = document.getElementById('wsStatus');
         const wsTextEl = document.getElementById('wsText');
         const simToggleEl = document.getElementById('simToggle');
+        const topbarRebootBtn = document.getElementById('topbarRebootBtn');
         const settingsOpenBtn = document.getElementById('settingsOpenBtn');
         const settingsCloseBtn = document.getElementById('settingsCloseBtn');
         const settingsModal = document.getElementById('settingsModal');
+        const testNameDisplay = document.getElementById('testNameDisplay');
 
         // Calibration modal DOM
         const calibrateBtn = document.getElementById('calibrateBtn');
@@ -709,6 +746,7 @@
             const day = String(now.getDate()).padStart(2, '0');
             const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
             testNameInput.value = `${month}-${day} Thrust Test - ${time}`;
+            updateTestNameDisplay();
 
             // Set default details and profile
             testDetailsInput.value = "Motor: Sample Motor 2207 1900KV\nProp: 5x4.5x3\nBattery: 4S Lipo\n\nTest Profile: 1200 - 2 - 4; 1600 - 3 - 3; 2000 - 4 - 5; 1000 - 1 - 2";
@@ -719,6 +757,14 @@
             initBoardConfig();
             initSimToggle();
             requestScaleFactor();
+
+            testNameInput.addEventListener('input', updateTestNameDisplay);
+        }
+
+        function updateTestNameDisplay() {
+            if (!testNameDisplay) return;
+            const name = testNameInput.value.trim();
+            testNameDisplay.textContent = name ? name : '--';
         }
 
         function initWebSocket() {
@@ -852,6 +898,7 @@
                     finalResultsReceiving = true;
                     expectedFinalTotal = data.total || 0;
                     finalTestResults = [];
+                    resultsSaved = false;
                     exportBtn.disabled = true;
                     logStatus(`Receiving final results (${expectedFinalTotal} points)...`);
                     break;
@@ -862,28 +909,27 @@
                     break;
                 case 'final_results_end':
                     finalResultsReceiving = false;
-                    logStatus('Final results received. Calculating stats...');
-                    exportBtn.disabled = finalTestResults.length === 0;
-                    plotFinalResults(finalTestResults);
-                    calculateAndDisplayStats(finalTestResults);
-                    if (finalTestResults.length > 0) {
-                        testTotalTime = finalTestResults[finalTestResults.length - 1].time / 1000;
-                        liveTimerEl.textContent = testTotalTime.toFixed(2) + 's';
+                    if (expectedFinalTotal > 0 && finalTestResults.length < expectedFinalTotal) {
+                        logStatus('Final results incomplete. Attempting recovery from device...');
+                        fetchLatestResultsFromDevice().then((recovered) => {
+                            if (recovered && recovered.length > 0) {
+                                finalTestResults = recovered;
+                                applyFinalResults(finalTestResults);
+                                logStatus('Recovered results from device.');
+                            } else {
+                                applyFinalResults(finalTestResults);
+                                logStatus('Recovery failed. Results may be incomplete.', 'error');
+                            }
+                        });
+                    } else {
+                        applyFinalResults(finalTestResults);
                     }
-                    testRunning = false;
                     break;
                 case 'final_results':
                     // Backward-compatible handler
-                    logStatus('Final results received. Calculating stats...');
                     finalTestResults = data.data || [];
-                    exportBtn.disabled = finalTestResults.length === 0;
-                    plotFinalResults(finalTestResults);
-                    calculateAndDisplayStats(finalTestResults);
-                    if (finalTestResults.length > 0) {
-                        testTotalTime = finalTestResults[finalTestResults.length - 1].time / 1000;
-                        liveTimerEl.textContent = testTotalTime.toFixed(2) + 's';
-                    }
-                    testRunning = false;
+                    resultsSaved = false;
+                    applyFinalResults(finalTestResults);
                     break;
                 case 'scale_factor':
                     updateScaleFactorUI(data.value);
@@ -894,6 +940,53 @@
                 case 'pong':
                     break;
             }
+        }
+
+        function applyFinalResults(results) {
+            logStatus('Final results received. Calculating stats...');
+            exportBtn.disabled = !results || results.length === 0;
+            plotFinalResults(results || []);
+            calculateAndDisplayStats(results || []);
+            if (results && results.length > 0) {
+                testTotalTime = results[results.length - 1].time / 1000;
+                liveTimerEl.textContent = testTotalTime.toFixed(2) + 's';
+            }
+            testRunning = false;
+        }
+
+        function parseResultsCsv(csvText) {
+            const lines = csvText.split(/\r?\n/);
+            const results = [];
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('timestamp')) continue;
+                const parts = trimmed.split(',');
+                if (parts.length < 3) continue;
+                const t = parseInt(parts[0], 10);
+                const thrust = parseFloat(parts[1]);
+                const pwm = parseInt(parts[2], 10);
+                if (isNaN(t) || isNaN(thrust) || isNaN(pwm)) continue;
+                results.push({ time: t, thrust: thrust, pwm: pwm });
+            }
+            return results;
+        }
+
+        async function fetchLatestResultsFromDevice() {
+            try {
+                const r = await fetch(authUrl('/api/results/latest'), { headers: authHeaders() });
+                if (!r.ok) return null;
+                const text = await r.text();
+                return parseResultsCsv(text);
+            } catch (err) {
+                return null;
+            }
+        }
+
+        function confirmDiscardIfNeeded(actionLabel) {
+            if (finalTestResults.length > 0 && !resultsSaved) {
+                return confirm(`Results are not saved. ${actionLabel} will discard them. Save first?`);
+            }
+            return true;
         }
 
         // Chart live update control
@@ -938,6 +1031,9 @@
                 const sequence = extractSequence(details);
 
                 if (sequence) {
+                    if (!confirmDiscardIfNeeded('Starting a new test')) {
+                        return;
+                    }
                     const plannedSeconds = computePlannedSeconds(sequence);
                     resetUI();
                     setPlannedTimeScale(plannedSeconds);
@@ -952,6 +1048,9 @@
             };
             stopBtn.onclick = () => sendCommand({ command: 'stop_test' });
             resetBtn.onclick = () => {
+                if (!confirmDiscardIfNeeded('Resetting')) {
+                    return;
+                }
                 sendCommand({ command: 'reset' });
                 resetUI();
             };
@@ -1107,21 +1206,31 @@
                 }
             });
 
-            configRebootBtn.addEventListener('click', async function() {
-                setConfigStatus('Rebooting...');
-                try {
-                    const r = await fetch(authUrl('/api/reboot'), {
-                        method: 'POST',
-                        headers: authHeaders()
-                    });
-                    if (!r.ok) {
-                        const data = await r.json().catch(() => ({}));
-                        setConfigStatus(data.error || 'Reboot failed.', true);
-                    }
-                } catch (e) {
-                    setConfigStatus('Request failed.', true);
+            configRebootBtn.addEventListener('click', rebootBoard);
+            if (topbarRebootBtn) {
+                topbarRebootBtn.addEventListener('click', rebootBoard);
+            }
+        }
+
+        async function rebootBoard() {
+            const confirmed = window.confirm('Reboot the ESP32 now? This will disconnect the UI temporarily.');
+            if (!confirmed) return;
+            setConfigStatus('Rebooting...');
+            logStatus('Rebooting board...');
+            try {
+                const r = await fetch(authUrl('/api/reboot'), {
+                    method: 'POST',
+                    headers: authHeaders()
+                });
+                if (!r.ok) {
+                    const data = await r.json().catch(() => ({}));
+                    setConfigStatus(data.error || 'Reboot failed.', true);
+                    logStatus(data.error || 'Reboot failed.', 'error');
                 }
-            });
+            } catch (e) {
+                setConfigStatus('Request failed.', true);
+                logStatus('Reboot request failed.', 'error');
+            }
         }
 
         function startCalibrationLive() {
@@ -1178,6 +1287,7 @@
             liveTimerEl.textContent = "0.00s";
             exportBtn.disabled = true;
             finalTestResults = [];
+            resultsSaved = true;
             summaryCardEl.style.display = 'none';
             testTotalTime = 0;
             logStatus("UI Reset.");
@@ -1457,6 +1567,7 @@
                 link.click();
                 document.body.removeChild(link);
             }
+            resultsSaved = true;
             logStatus(`Exported results to ${fileName}`);
         }
     </script>
