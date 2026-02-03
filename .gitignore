@@ -8,3 +8,6 @@
 output/
 key
 key.pub
+
+# PlatformIO local home
+.pio-home/
