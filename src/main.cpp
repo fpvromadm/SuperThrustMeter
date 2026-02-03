@@ -98,7 +98,27 @@ void setup() {
 
 void loop() {
   ws.cleanupClients();
-  readEscTelemetry(simEnabled(boardConfig), boardConfig, appState.escVoltage, appState.escCurrent);
+  readEscTelemetry(simEnabled(boardConfig),
+                   boardConfig,
+                   appState.escVoltage,
+                   appState.escCurrent,
+                   appState.escTelemStale,
+                   appState.escTelemAgeMs);
+
+  if (appState.escTelemStale != appState.lastEscTelemStaleNotified) {
+    appState.lastEscTelemStaleNotified = appState.escTelemStale;
+    if (hasWsClients(ws)) {
+      StaticJsonDocument<192> statusDoc;
+      statusDoc["type"] = "esc_telemetry";
+      statusDoc["stale"] = appState.escTelemStale;
+      statusDoc["message"] = appState.escTelemStale ? "ESC telemetry lost" : "ESC telemetry restored";
+      char statusOut[192];
+      size_t statusLen = serializeJson(statusDoc, statusOut, sizeof(statusOut));
+      if (statusLen > 0) {
+        notifyClients(ws, boardConfig, appState.wifiProvisioningMode, statusOut);
+      }
+    }
+  }
 
 #if ENABLE_HEAP_LOG
   if (millis() - appState.lastHeapLogTime >= 5000) {
@@ -119,22 +139,26 @@ void loop() {
       updateSimTelemetry(appState, boardConfig);
     }
 
-    StaticJsonDocument<200> telemDoc;
-    telemDoc["type"] = "live_data";
-    telemDoc["time"] = millis();
-    float thrust = 0.0f;
-    if (readThrust(simEnabled(boardConfig), loadCellInitialized ? loadCell : nullptr, appState, &thrust)) {
-      telemDoc["thrust"] = thrust;
-    } else {
-      telemDoc["thrust"] = 0.0;
-    }
-    telemDoc["pwm"] = appState.currentPwm;
-    telemDoc["voltage"] = appState.escVoltage;
-    telemDoc["current"] = appState.escCurrent;
-    char telemOutput[256];
-    size_t len = serializeJson(telemDoc, telemOutput, sizeof(telemOutput));
-    if (len > 0) {
-      notifyClients(ws, boardConfig, appState.wifiProvisioningMode, telemOutput);
+    if (hasWsClients(ws)) {
+      StaticJsonDocument<200> telemDoc;
+      telemDoc["type"] = "live_data";
+      telemDoc["time"] = millis();
+      float thrust = 0.0f;
+      if (readThrust(simEnabled(boardConfig), loadCellInitialized ? loadCell : nullptr, appState, &thrust)) {
+        telemDoc["thrust"] = thrust;
+      } else {
+        telemDoc["thrust"] = 0.0;
+      }
+      telemDoc["pwm"] = appState.currentPwm;
+      telemDoc["voltage"] = appState.escVoltage;
+      telemDoc["current"] = appState.escCurrent;
+      telemDoc["esc_telem_stale"] = appState.escTelemStale;
+      telemDoc["esc_telem_age_ms"] = appState.escTelemAgeMs;
+      char telemOutput[256];
+      size_t len = serializeJson(telemDoc, telemOutput, sizeof(telemOutput));
+      if (len > 0) {
+        notifyClients(ws, boardConfig, appState.wifiProvisioningMode, telemOutput);
+      }
     }
   }
 

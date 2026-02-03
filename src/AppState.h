@@ -41,6 +41,10 @@ struct AppState {
   // ESC telemetry
   float escVoltage = 0.0f;
   float escCurrent = 0.0f;
+  bool escTelemStale = false;
+  bool lastEscTelemStaleNotified = false;
+  unsigned long escTelemAgeMs = 0;
+  unsigned long lastEscTelemWarningMs = 0;
 
   // PWM
   int currentPwm = 1000;

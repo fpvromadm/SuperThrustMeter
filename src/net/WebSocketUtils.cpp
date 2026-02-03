@@ -22,3 +22,11 @@ void notifyClients(AsyncWebSocket &ws, const BoardConfig &cfg, bool wifiProvisio
     }
   }
 }
+
+bool hasWsClients(AsyncWebSocket &ws) {
+  auto clients = ws.getClients();
+  for (auto clientPtr : clients) {
+    if (clientPtr) return true;
+  }
+  return false;
+}

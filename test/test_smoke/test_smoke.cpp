@@ -7,7 +7,9 @@
 
 static void test_parse_sequence_ok() {
   AppState state;
-  bool ok = parseAndStoreSequence(state, "1100 - 2 - 3; 1200 - 1 - 2");
+  BoardConfig cfg;
+  setBoardConfigDefaults(cfg);
+  bool ok = parseAndStoreSequence(state, cfg, "1100 - 2 - 3; 1200 - 1 - 2");
   TEST_ASSERT_TRUE(ok);
   TEST_ASSERT_EQUAL_UINT32(2, state.testSequence.size());
   TEST_ASSERT_EQUAL_INT(1100, state.testSequence[0].pwm);
@@ -17,7 +19,9 @@ static void test_parse_sequence_ok() {
 
 static void test_parse_sequence_invalid() {
   AppState state;
-  bool ok = parseAndStoreSequence(state, "bad-input");
+  BoardConfig cfg;
+  setBoardConfigDefaults(cfg);
+  bool ok = parseAndStoreSequence(state, cfg, "bad-input");
   TEST_ASSERT_FALSE(ok);
   TEST_ASSERT_EQUAL_UINT32(0, state.testSequence.size());
 }

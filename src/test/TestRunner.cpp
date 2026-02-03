@@ -56,6 +56,7 @@ void triggerSafetyShutdown(AppState &state, const BoardConfig &cfg, bool simEnab
   StaticJsonDocument<200> doc;
   doc["type"] = "safety_shutdown";
   doc["message"] = reason;
+  doc["state"] = "safety_shutdown";
   char output[256];
   size_t outLen = serializeJson(doc, output, sizeof(output));
   if (outLen > 0) {
@@ -74,14 +75,16 @@ void finishTest(AppState &state, const BoardConfig &cfg, bool simEnabled, AsyncW
   StaticJsonDocument<200> doc;
   doc["type"] = "status";
   doc["message"] = "Test finished. Sending final results.";
-  char output[256];
-  size_t outLen = serializeJson(doc, output, sizeof(output));
-  if (outLen > 0) {
-    notifyClients(ws, cfg, state.wifiProvisioningMode, output);
+  if (hasWsClients(ws)) {
+    char output[256];
+    size_t outLen = serializeJson(doc, output, sizeof(output));
+    if (outLen > 0) {
+      notifyClients(ws, cfg, state.wifiProvisioningMode, output);
+    }
   }
 
   const size_t totalPoints = state.testResults.size();
-  {
+  if (hasWsClients(ws)) {
     StaticJsonDocument<128> startDoc;
     startDoc["type"] = "final_results_start";
     startDoc["total"] = (uint32_t)totalPoints;
@@ -92,28 +95,32 @@ void finishTest(AppState &state, const BoardConfig &cfg, bool simEnabled, AsyncW
     }
   }
 
-  static String chunkOut;
-  chunkOut.reserve(9000);
-
-  for (size_t i = 0; i < totalPoints; i += FINAL_RESULTS_CHUNK_SIZE) {
-    DynamicJsonDocument chunkDoc(8192);
-    chunkDoc["type"] = "final_results_chunk";
-    chunkDoc["index"] = (uint32_t)i;
-    JsonArray data = chunkDoc.createNestedArray("data");
-    size_t end = i + FINAL_RESULTS_CHUNK_SIZE;
-    if (end > totalPoints) end = totalPoints;
-    for (size_t j = i; j < end; j++) {
-      JsonObject dataPoint = data.createNestedObject();
-      dataPoint["time"] = state.testResults[j].timestamp;
-      dataPoint["thrust"] = state.testResults[j].thrust;
-      dataPoint["pwm"] = state.testResults[j].pwm;
+  if (hasWsClients(ws)) {
+    static char chunkOut[9000];
+    static DynamicJsonDocument chunkDoc(8192);
+    for (size_t i = 0; i < totalPoints; i += FINAL_RESULTS_CHUNK_SIZE) {
+      chunkDoc.clear();
+      chunkDoc["type"] = "final_results_chunk";
+      chunkDoc["index"] = (uint32_t)i;
+      JsonArray data = chunkDoc.createNestedArray("data");
+      size_t end = i + FINAL_RESULTS_CHUNK_SIZE;
+      if (end > totalPoints) end = totalPoints;
+      for (size_t j = i; j < end; j++) {
+        JsonObject dataPoint = data.createNestedObject();
+        dataPoint["time"] = state.testResults[j].timestamp;
+        dataPoint["thrust"] = state.testResults[j].thrust;
+        dataPoint["pwm"] = state.testResults[j].pwm;
+      }
+      size_t chunkLen = serializeJson(chunkDoc, chunkOut, sizeof(chunkOut));
+      if (chunkLen > 0) {
+        notifyClients(ws, cfg, state.wifiProvisioningMode, chunkOut);
+      } else {
+        logWarn("Chunk JSON buffer too small; skipping chunk %u", (unsigned)i);
+      }
     }
-    chunkOut = "";
-    serializeJson(chunkDoc, chunkOut);
-    notifyClients(ws, cfg, state.wifiProvisioningMode, chunkOut);
   }
 
-  {
+  if (hasWsClients(ws)) {
     StaticJsonDocument<128> endDoc;
     endDoc["type"] = "final_results_end";
     char endOut[192];
@@ -127,7 +134,8 @@ void finishTest(AppState &state, const BoardConfig &cfg, bool simEnabled, AsyncW
   state.currentState = State::IDLE;
 }
 
-bool parseAndStoreSequence(AppState &state, const char *sequenceStr) {
+bool parseAndStoreSequence(AppState &state, const BoardConfig &cfg, const char *sequenceStr) {
+  if (!sequenceStr) return false;
   state.testSequence.clear();
   char *sequenceCopy = strdup(sequenceStr);
   char *stepToken = strtok(sequenceCopy, ";");
@@ -136,9 +144,19 @@ bool parseAndStoreSequence(AppState &state, const char *sequenceStr) {
     TestStep step;
     int pwm, spinup, stable;
     if (sscanf(stepToken, "%d - %d - %d", &pwm, &spinup, &stable) == 3) {
+      if (pwm < cfg.min_pulse_width || pwm > cfg.max_pulse_width) {
+        Serial.printf("Invalid PWM in step: %s\n", stepToken);
+        free(sequenceCopy);
+        return false;
+      }
+      if (spinup < 0 || stable < 0) {
+        Serial.printf("Invalid timing in step: %s\n", stepToken);
+        free(sequenceCopy);
+        return false;
+      }
       step.pwm = pwm;
-      step.spinup_ms = spinup * 1000;
-      step.stable_ms = stable * 1000;
+      step.spinup_ms = (unsigned long)spinup * 1000UL;
+      step.stable_ms = (unsigned long)stable * 1000UL;
       state.testSequence.push_back(step);
     } else {
       Serial.printf("Failed to parse step: %s\n", stepToken);
@@ -203,6 +221,7 @@ void tickTestRunner(AppState &state, const BoardConfig &cfg, bool simEnabled, HX
           state.stepStartTime = millis();
           state.previousPwmForRamp = cfg.min_pulse_width;
           state.testResults.clear();
+          state.testResults.reserve(cfg.max_test_samples);
           state.testResultsFullLogged = false;
           state.lastThrustForSafetyCheck = 0.0f;
           state.lastSafetyCheckTime = 0;
@@ -223,7 +242,9 @@ void tickTestRunner(AppState &state, const BoardConfig &cfg, bool simEnabled, HX
       TestStep &step = state.testSequence[state.currentSequenceStep];
       unsigned long elapsedInStep = millis() - state.stepStartTime;
 
-      if (elapsedInStep < step.spinup_ms) {
+      if (step.spinup_ms == 0) {
+        setEscThrottlePwm(state, cfg, simEnabled, step.pwm);
+      } else if (elapsedInStep < step.spinup_ms) {
         int new_pwm = map(elapsedInStep, 0, step.spinup_ms, state.previousPwmForRamp, step.pwm);
         setEscThrottlePwm(state, cfg, simEnabled, new_pwm);
       } else if (elapsedInStep < (step.spinup_ms + step.stable_ms)) {
@@ -246,6 +267,17 @@ void tickTestRunner(AppState &state, const BoardConfig &cfg, bool simEnabled, HX
           state.lastSimSampleMs = millis();
         }
 
+        if (state.escTelemStale && hasWsClients(ws)) {
+          const unsigned long now = millis();
+          if (state.lastEscTelemWarningMs == 0 || (now - state.lastEscTelemWarningMs) > 2000) {
+            state.lastEscTelemWarningMs = now;
+            notifyClients(ws, cfg, state.wifiProvisioningMode,
+                          "{\"type\":\"warning\",\"message\":\"ESC telemetry lost during test\"}");
+          }
+        } else {
+          state.lastEscTelemWarningMs = 0;
+        }
+
         if (!simEnabled || simSamplingReady) {
           if (state.testResults.size() < cfg.max_test_samples) {
             state.testResults.push_back({currentTime, currentThrust, state.currentPwm});
@@ -255,7 +287,8 @@ void tickTestRunner(AppState &state, const BoardConfig &cfg, bool simEnabled, HX
           }
         }
 
-        if (millis() - state.lastTelemetryMs >= TELEMETRY_INTERVAL_MS && (!simEnabled || simSamplingReady)) {
+        if (hasWsClients(ws) && millis() - state.lastTelemetryMs >= TELEMETRY_INTERVAL_MS &&
+            (!simEnabled || simSamplingReady)) {
           state.lastTelemetryMs = millis();
           StaticJsonDocument<200> doc;
           doc["type"] = "live_data";
@@ -264,6 +297,8 @@ void tickTestRunner(AppState &state, const BoardConfig &cfg, bool simEnabled, HX
           doc["pwm"] = state.currentPwm;
           doc["voltage"] = state.escVoltage;
           doc["current"] = state.escCurrent;
+          doc["esc_telem_stale"] = state.escTelemStale;
+          doc["esc_telem_age_ms"] = state.escTelemAgeMs;
           char output[256];
           size_t outLen = serializeJson(doc, output, sizeof(output));
           if (outLen > 0) {

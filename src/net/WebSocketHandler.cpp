@@ -69,12 +69,19 @@ static void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
       if (strcmp(command, "start_test") == 0) {
         if (s_state->currentState == State::IDLE) {
           const char *sequence = doc["sequence"];
+          if (!sequence) {
+            notifyClients(*server, *s_cfg, s_state->wifiProvisioningMode,
+                          "{\"type\":\"error\",\"message\":\"Missing sequence\"}");
+            return;
+          }
           Serial.printf("Received test sequence: %s\n", sequence);
-          if (parseAndStoreSequence(*s_state, sequence)) {
+          if (parseAndStoreSequence(*s_state, *s_cfg, sequence)) {
             deleteLastResultsFile();
             Serial.println("Sequence parsed successfully. Starting pre-test tare.");
             startPreTestTare(*s_state, *s_cfg);
           } else {
+            notifyClients(*server, *s_cfg, s_state->wifiProvisioningMode,
+                          "{\"type\":\"error\",\"message\":\"Invalid test sequence\"}");
             triggerSafetyShutdown(*s_state, *s_cfg, simEnabled(*s_cfg), *server, "Invalid test sequence format.");
           }
         }

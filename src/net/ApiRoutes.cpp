@@ -114,6 +114,23 @@ void setupApiRoutes(AsyncWebServer &server, AsyncWebSocket &ws, AppState &state,
     request->send(LittleFS, resultsPath, "text/csv");
   });
 
+  server.on("/api/telemetry/status", HTTP_GET, [&cfg, &state](AsyncWebServerRequest *request) {
+    if (!isAuthorizedRequest(cfg, state.wifiProvisioningMode, request)) {
+      request->send(401, "application/json", "{\"error\":\"Unauthorized\"}");
+      return;
+    }
+    StaticJsonDocument<256> doc;
+    doc["esc_voltage"] = state.escVoltage;
+    doc["esc_current"] = state.escCurrent;
+    doc["esc_telem_stale"] = state.escTelemStale;
+    doc["esc_telem_age_ms"] = state.escTelemAgeMs;
+    doc["pwm"] = state.currentPwm;
+    doc["state"] = (int)state.currentState;
+    String out;
+    serializeJson(doc, out);
+    request->send(200, "application/json", out);
+  });
+
   server.on("/api/config/default", HTTP_GET, [&cfg, &state](AsyncWebServerRequest *request) {
     if (!isAuthorizedRequest(cfg, state.wifiProvisioningMode, request)) {
       request->send(401, "text/plain", "Unauthorized");
