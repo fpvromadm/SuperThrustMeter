@@ -331,12 +331,35 @@
             width: 100%; padding: 1rem; font-size: 1.2rem; font-weight: 700;
             border: none; border-radius: 10px; cursor: pointer;
             transition: all 0.3s ease; color: white; margin-bottom: 0.5rem;
+            display: inline-flex; align-items: center; justify-content: center; gap: 0.6rem;
+            letter-spacing: 0.02em;
         }
+        .btn-icon {
+            width: 18px;
+            height: 18px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: currentColor;
+        }
+        .btn-icon svg { width: 100%; height: 100%; display: block; }
 
         #startBtn { background-color: #28a745; }
         #startBtn:hover { background-color: #218838; }
-        #stopBtn { background-color: #dc3545; }
-        #stopBtn:hover { background-color: #c82333; }
+        #startBtn.is-stop { background-color: #dc3545; }
+        #startBtn.is-stop:hover { background-color: #c82333; }
+        .controls button:disabled, .export-controls button:disabled {
+            background: linear-gradient(135deg, rgba(22, 33, 62, 0.95), rgba(15, 52, 96, 0.7));
+            color: #aeb7c9;
+            cursor: not-allowed;
+            box-shadow: none;
+            border: 1px solid rgba(233, 69, 96, 0.25);
+            letter-spacing: 0.03em;
+        }
+        #startBtn:disabled {
+            color: #d3d8e4;
+            text-shadow: 0 1px 6px rgba(233, 69, 96, 0.12);
+        }
         #resetBtn { background-color: #ffc107; color: #333; }
         #resetBtn:hover { background-color: #e0a800; }
         
@@ -538,9 +561,22 @@
             <div class="card">
                 <h2 class="card-title">Quick Controls</h2>
                 <div class="controls">
-                    <button id="startBtn">START TEST</button>
-                    <button id="stopBtn">STOP TEST</button>
-                    <button id="resetBtn">RESET</button>
+                    <button id="startBtn">
+                        <span class="btn-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                        </span>
+                        <span class="btn-label">START TEST</span>
+                    </button>
+                    <button id="resetBtn">
+                        <span class="btn-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 6V3L8 7l4 4V8a4 4 0 1 1-4 4H6a6 6 0 1 0 6-6z"/>
+                            </svg>
+                        </span>
+                        <span class="btn-label">RESET</span>
+                    </button>
                 </div>
             </div>
 
@@ -575,7 +611,15 @@
                     <p><strong>Total Test Duration:</strong> <span id="summaryTotalTime">0</span> s</p>
                 </div>
                 <div class="export-controls" style="margin-top: 1rem;">
-                    <button id="exportBtn" disabled>Export CSV Results</button>
+                    <button id="exportBtn" disabled>
+                        <span class="btn-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 3a1 1 0 0 1 1 1v8.59l2.3-2.3 1.4 1.42-4.7 4.7-4.7-4.7 1.4-1.42 2.3 2.3V4a1 1 0 0 1 1-1z"/>
+                                <path d="M5 19a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H6a1 1 0 0 1-1-1z"/>
+                            </svg>
+                        </span>
+                        <span class="btn-label">Export CSV Results</span>
+                    </button>
                 </div>
             </div>
 
@@ -694,7 +738,6 @@
         const currentCurrentEl = document.getElementById('currentCurrent');
         const statusLogEl = document.getElementById('statusLog');
         const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
         const resetBtn = document.getElementById('resetBtn');
         const exportBtn = document.getElementById('exportBtn');
         const testNameInput = document.getElementById('testName');
@@ -734,6 +777,7 @@
         let lastCalibrationFactor = null;
         let testRunning = false;
         let testTotalTime = 0; // Store total test time for timer display
+        let testState = 'idle'; // idle | running | complete
         const chartCard = document.getElementById('chartCard');
 
         window.addEventListener('load', onLoad);
@@ -757,6 +801,7 @@
             initBoardConfig();
             initSimToggle();
             requestScaleFactor();
+            setTestState('idle');
 
             testNameInput.addEventListener('input', updateTestNameDisplay);
         }
@@ -952,6 +997,7 @@
                 liveTimerEl.textContent = testTotalTime.toFixed(2) + 's';
             }
             testRunning = false;
+            setTestState('complete');
         }
 
         function parseResultsCsv(csvText) {
@@ -993,6 +1039,7 @@
         function startChartLive() {
             testRunning = true;
             testTotalTime = 0;
+            setTestState('running');
             // Always clear chart for a new run
             if (thrustChart) {
                 thrustChart.data.datasets[0].data = [];
@@ -1003,6 +1050,7 @@
 
         function stopChartLive() {
             testRunning = false;
+            setTestState('complete');
             // Chart remains visible, timer should show total test time (do not reset)
             if (testTotalTime > 0) {
                 liveTimerEl.textContent = testTotalTime.toFixed(2) + 's';
@@ -1027,6 +1075,14 @@
 
         function initButtons() {
             startBtn.onclick = () => {
+                if (testState === 'running') {
+                    sendCommand({ command: 'stop_test' });
+                    setTestState('complete');
+                    return;
+                }
+                if (testState === 'complete') {
+                    return;
+                }
                 const details = testDetailsInput.value;
                 const sequence = extractSequence(details);
 
@@ -1042,11 +1098,11 @@
                     }
                     logStatus(`Sending sequence to ESP32: ${sequence}`);
                     sendCommand({ command: 'start_test', sequence: sequence });
+                    setTestState('running');
                 } else {
                     alert('Could not find a "Test Profile:" line in the details box.');
                 }
             };
-            stopBtn.onclick = () => sendCommand({ command: 'stop_test' });
             resetBtn.onclick = () => {
                 if (!confirmDiscardIfNeeded('Resetting')) {
                     return;
@@ -1292,6 +1348,39 @@
             testTotalTime = 0;
             logStatus("UI Reset.");
             stopChartLive();
+            setTestState('idle');
+        }
+
+        function setTestState(state) {
+            testState = state;
+            updateTestControls();
+        }
+
+        function updateTestControls() {
+            if (!startBtn || !resetBtn) return;
+            const startLabel = startBtn.querySelector('.btn-label');
+            const startIcon = startBtn.querySelector('.btn-icon');
+            const setStartVisual = (label, svg) => {
+                if (startLabel) startLabel.textContent = label;
+                if (startIcon) startIcon.innerHTML = svg;
+            };
+            startBtn.classList.remove('is-stop');
+            if (testState === 'running') {
+                setStartVisual('STOP TEST', '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h10v10H7z"/></svg>');
+                startBtn.disabled = false;
+                startBtn.classList.add('is-stop');
+                resetBtn.disabled = true;
+                return;
+            }
+            if (testState === 'complete') {
+                setStartVisual('COMPLETE', '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.2l-3.5-3.5L4 14.2 9 19l11-11-1.5-1.5z"/></svg>');
+                startBtn.disabled = true;
+                resetBtn.disabled = false;
+                return;
+            }
+            setStartVisual('START TEST', '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>');
+            startBtn.disabled = false;
+            resetBtn.disabled = false;
         }
 
         function computePlannedSeconds(sequence) {
